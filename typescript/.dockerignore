@@ -1,0 +1,51 @@
+# Dependencies (reinstalled in Docker)
+node_modules
+**/node_modules
+
+# Build outputs (rebuilt in Docker)
+dist
+**/dist
+build
+**/build
+
+# Turbo cache (not needed, we rebuild)
+.turbo
+**/.turbo
+
+# Git
+.git
+.gitignore
+
+# Environment files (secrets - inject at runtime)
+.env
+.env.*
+!.env.example
+
+# IDE/Editor
+.vscode
+.idea
+.cursor
+
+# Docker files (prevent recursion)
+**/Dockerfile*
+docker-compose*.yml
+
+# Documentation (not needed for build)
+*.md
+LICENSE
+
+# Test/coverage
+coverage
+.nyc_output
+**/*.test.ts
+**/*.spec.ts
+__tests__
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1
+
+# ==============================================================================
+# Migration Dockerfile - Includes drizzle-kit and schema files for migrations
+# Build from monorepo root: docker build -f apps/server/Dockerfile.migration -t server-migration:latest .
+# ==============================================================================
+
+FROM node:22-alpine AS base
+
+RUN apk update && apk add --no-cache libc6-compat
+
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN corepack enable && corepack prepare pnpm@10.24.0 --activate
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/db/package.json ./packages/db/
+COPY packages/env/package.json ./packages/env/
+
+# Copy env package source (db depends on it)
+COPY packages/env/src ./packages/env/src/
+COPY packages/env/tsconfig.json ./packages/env/
+
+# Install dependencies (including drizzle-kit for migrations)
+RUN pnpm install --frozen-lockfile --shamefully-hoist
+
+# Copy schema and config files needed for migrations
+COPY packages/db/drizzle.config.ts ./packages/db/
+COPY packages/db/src/schema ./packages/db/src/schema/
+COPY packages/db/src/index.ts ./packages/db/src/
+COPY packages/db/tsconfig.json ./packages/db/
+
+# Set working directory to db package
+WORKDIR /app/packages/db
+
+# Default command runs migration
+# Note: drizzle.config.ts expects DATABASE_URL from env, not a file path
+CMD ["pnpm", "db:push"]

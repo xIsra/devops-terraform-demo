@@ -1,0 +1,59 @@
+name: Infrastructure
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        type: choice
+        options: [plan, apply, destroy]
+        default: plan
+      environment:
+        description: "Target environment"
+        type: choice
+        options: [production, staging, testing]
+        default: staging
+
+env:
+  NAMESPACE: ${{ github.event.inputs.environment }}
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.action == 'apply' && github.event.inputs.environment || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Create tfvars
+        run: |
+          mkdir -p infra/envs/${{ env.NAMESPACE }}
+          cat > infra/envs/${{ env.NAMESPACE }}/terraform.tfvars << EOF
+          environment = "${{ env.NAMESPACE }}"
+          openai_api_key = "${{ secrets.OPENAI_API_KEY }}"
+          database_url = "${{ secrets.DATABASE_URL }}"
+          db_username = "${{ secrets.DB_USERNAME }}"
+          db_password = "${{ secrets.DB_PASSWORD }}"
+          db_name = "${{ secrets.DB_NAME }}"
+          EOF
+
+      - name: Set NAMESPACE for Makefile
+        run: echo "NAMESPACE=${{ env.NAMESPACE }}" >> $GITHUB_ENV
+
+      - name: Terraform Plan
+        if: github.event.inputs.action == 'plan'
+        run: make infra-plan NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: make infra-apply NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: make infra-destroy NAMESPACE=${{ env.NAMESPACE }}

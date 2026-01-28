@@ -1,0 +1,41 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform/
+# Note: .terraform.lock.hcl should be COMMITTED (not ignored) for consistent provider versions
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Kind / Kubernetes
+kubeconfig
+*.kubeconfig
+*-config
+devops-demo-config
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local testing
+.act/
+.secrets
+
+temp/

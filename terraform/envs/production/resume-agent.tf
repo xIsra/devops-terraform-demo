@@ -1,0 +1,14 @@
+module "resume_agent" {
+  source = "../../modules/resume-agent"
+
+  namespace     = var.environment
+  version       = var.resume_agent_version
+  replicas      = var.resume_agent_replicas
+  openai_api_key = var.openai_api_key
+  openai_model   = var.openai_model
+
+  depends_on = [
+    kubernetes_namespace.app,
+    null_resource.wait_for_ingress
+  ]
+}

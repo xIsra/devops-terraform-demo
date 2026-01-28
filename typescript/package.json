@@ -1,0 +1,46 @@
+{
+  "name": "typescript",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:native": "turbo -F native dev",
+    "dev:web": "turbo -F web dev",
+    "dev:server": "turbo -F server dev",
+    "db:push": "turbo -F @typescript/db db:push",
+    "db:studio": "turbo -F @typescript/db db:studio",
+    "db:generate": "turbo -F @typescript/db db:generate",
+    "db:migrate": "turbo -F @typescript/db db:migrate",
+    "db:start": "turbo -F @typescript/db db:start",
+    "db:watch": "turbo -F @typescript/db db:watch",
+    "db:stop": "turbo -F @typescript/db db:stop",
+    "db:down": "turbo -F @typescript/db db:down",
+    "check": "ultracite check",
+    "fix": "ultracite fix",
+    "docker:build:server": "docker build -f apps/server/Dockerfile -t server:latest .",
+    "docker:build:web": "docker build -f apps/web/Dockerfile -t web:latest --build-arg VITE_SERVER_URL=http://localhost:3001 .",
+    "docker:build": "pnpm docker:build:server && pnpm docker:build:web",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "dependencies": {
+    "@typescript/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.12",
+    "@types/node": "^22.13.14",
+    "@typescript/config": "workspace:*",
+    "turbo": "^2.6.3",
+    "typescript": "^5",
+    "ultracite": "7.1.1"
+  },
+  "packageManager": "pnpm@10.24.0"
+}

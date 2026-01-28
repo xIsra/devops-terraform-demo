@@ -1,0 +1,27 @@
+{
+  "name": "@typescript/api",
+  "type": "module",
+  "exports": {
+    ".": {
+      "default": "./src/index.ts"
+    },
+    "./*": {
+      "default": "./src/*.ts"
+    }
+  },
+  "scripts": {},
+  "dependencies": {
+    "@trpc/client": "catalog:",
+    "@trpc/server": "catalog:",
+    "@typescript/db": "workspace:*",
+    "@typescript/env": "workspace:*",
+    "dotenv": "catalog:",
+    "drizzle-orm": "^0.45.1",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@typescript/config": "workspace:*",
+    "hono": "catalog:",
+    "typescript": "^5"
+  }
+}
