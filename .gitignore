@@ -1,4 +1,5 @@
 # Terraform
+infra/envs/*/certs/
 *.tfstate
 *.tfstate.*
 *.tfvars

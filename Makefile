@@ -55,12 +55,8 @@ infra-apply: infra-init
 		echo "Importing existing resources if not in state..."; \
 		($(MAKE) setup-kubeconfig && \
 		cd $(TF_ENV_DIR) && \
-		if kubectl get namespace $(NAMESPACE) &>/dev/null && ! terraform state show kubernetes_namespace.app &>/dev/null 2>&1; then \
-			echo "Importing namespace $(NAMESPACE)..."; \
-			terraform import -var-file=terraform.tfvars kubernetes_namespace.app $(NAMESPACE) || true; \
-		fi && \
 		if kubectl get namespace $(NAMESPACE) &>/dev/null && ! terraform state show module.namespace.kubernetes_namespace.this &>/dev/null 2>&1; then \
-			echo "Importing namespace module..."; \
+			echo "Importing namespace $(NAMESPACE)..."; \
 			terraform import -var-file=terraform.tfvars module.namespace.kubernetes_namespace.this $(NAMESPACE) || true; \
 		fi && \
 		SERVER_VERSION=$$(grep '^server_version' $(TF_VARS) 2>/dev/null | cut -d'"' -f2 || echo 'latest') && \
@@ -88,7 +84,7 @@ infra-apply: infra-init
 		-target=kind_cluster.this \
 		-target=module.postgresql \
 		-target=module.observability \
-		-target=kubernetes_namespace.app \
+		-target=module.namespace \
 		-target=null_resource.wait_for_ingress \
 		-auto-approve || true
 	@# Apply everything else (refresh will have synced existing resources)

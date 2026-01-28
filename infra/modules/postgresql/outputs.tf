@@ -15,6 +15,6 @@ output "service_fqdn" {
 
 output "connection_string" {
   description = "PostgreSQL connection string"
-  value       = "postgresql://${var.credentials.username}:${var.credentials.password}@${kubernetes_service.this.metadata[0].name}.${kubernetes_namespace.this.metadata[0].name}.svc.cluster.local:5432/${var.credentials.database}"
+  value       = "postgresql://${var.credentials.username}:${urlencode(var.credentials.password)}@${kubernetes_service.this.metadata[0].name}.${kubernetes_namespace.this.metadata[0].name}.svc.cluster.local:5432/${var.credentials.database}"
   sensitive   = true
 }

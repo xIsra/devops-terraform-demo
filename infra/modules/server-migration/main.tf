@@ -10,7 +10,7 @@ resource "kubernetes_secret" "this" {
   }
 
   data = {
-    DATABASE_URL = base64encode(var.database_url)
+    DATABASE_URL = var.database_url
   }
   type = "Opaque"
 }

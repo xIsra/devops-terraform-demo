@@ -13,3 +13,9 @@ variable "replicas" {
   type        = number
   default     = 2
 }
+
+variable "api_base_url" {
+  description = "API base URL for the web application (e.g., http://localhost/api)"
+  type        = string
+  default     = "http://localhost/api"
+}

@@ -12,6 +12,7 @@ module "app" {
   health_path     = "/"
 
   env_vars = {
-    NODE_ENV = "production"
+    NODE_ENV        = "production"
+    VITE_SERVER_URL = var.api_base_url
   }
 }

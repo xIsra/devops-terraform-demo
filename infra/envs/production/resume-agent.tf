@@ -8,7 +8,7 @@ module "resume_agent" {
   openai_model   = var.openai_model
 
   depends_on = [
-    kubernetes_namespace.app,
+    module.namespace,
     null_resource.wait_for_ingress
   ]
 }

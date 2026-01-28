@@ -20,8 +20,8 @@ resource "kubernetes_secret" "this" {
     labels    = local.labels
   }
 
-  # Use data (base64 encoded) for secrets
-  data = { for k, v in var.secrets : k => base64encode(v) }
+  # Use data - Terraform automatically base64-encodes values
+  data = var.secrets
   type = "Opaque"
 }
 
@@ -167,20 +167,16 @@ resource "kubernetes_service" "this" {
 }
 
 # Ingress
+# Caddy automatically handles HTTPS - no TLS configuration needed
 resource "kubernetes_ingress_v1" "this" {
   metadata {
     name      = "${var.name}-ingress"
     namespace = var.namespace
     labels    = local.labels
-
-    annotations = var.ingress_rewrite ? {
-      "nginx.ingress.kubernetes.io/rewrite-target" = "/$2"
-      "nginx.ingress.kubernetes.io/use-regex"      = "true"
-    } : {}
   }
 
   spec {
-    ingress_class_name = "nginx"
+    ingress_class_name = "caddy"
 
     rule {
       host = "localhost"

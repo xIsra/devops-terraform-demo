@@ -23,9 +23,9 @@ resource "kubernetes_secret" "credentials" {
   }
 
   data = {
-    username = base64encode(var.credentials.username)
-    password = base64encode(var.credentials.password)
-    database = base64encode(var.credentials.database)
+    username = var.credentials.username
+    password = var.credentials.password
+    database = var.credentials.database
   }
 
   type = "Opaque"

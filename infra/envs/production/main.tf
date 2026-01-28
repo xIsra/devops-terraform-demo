@@ -55,7 +55,7 @@ resource "kind_cluster" "this" {
         protocol       = "TCP"
       }
 
-      # Required labels for ingress-nginx to work with Kind
+      # Required labels for ingress controller to work with Kind
       kubeadm_config_patches = [
         <<-EOT
         kind: InitConfiguration
@@ -84,7 +84,7 @@ resource "kind_cluster" "this" {
 # -----------------------------------------------------------------------------
 # Infrastructure components are organized in separate files:
 # - namespaces.tf (Environment namespace)
-# - ingress.tf (Nginx ingress controller)
+# - ingress.tf (Caddy ingress controller with automatic HTTPS)
 # - database.tf (PostgreSQL)
 # - observability.tf (Prometheus, Grafana, Loki, OTEL)
 #

@@ -8,7 +8,7 @@ module "server_migration" {
   database_url  = module.postgresql.connection_string
 
   depends_on = [
-    kubernetes_namespace.app,
+    module.namespace,
     module.postgresql
   ]
 }
