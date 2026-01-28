@@ -19,3 +19,9 @@ variable "database_url" {
   type        = string
   sensitive   = true
 }
+
+variable "cors_origin" {
+  description = "CORS origin for the server API (e.g., https://localhost)"
+  type        = string
+  default     = "https://localhost"
+}

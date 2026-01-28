@@ -13,6 +13,7 @@ module "app" {
 
   env_vars = {
     NODE_ENV        = "production"
+    SERVER_URL      = var.api_base_url
     VITE_SERVER_URL = var.api_base_url
   }
 }

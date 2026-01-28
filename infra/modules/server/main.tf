@@ -16,6 +16,6 @@ module "app" {
 
   env_vars = {
     NODE_ENV    = "production"
-    CORS_ORIGIN = "http://localhost"
+    CORS_ORIGIN = var.cors_origin
   }
 }
