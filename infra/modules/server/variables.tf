@@ -21,7 +21,13 @@ variable "database_url" {
 }
 
 variable "cors_origin" {
-  description = "CORS origin for the server API (e.g., https://localhost)"
+  description = "CORS origin for the server API (e.g., https://devops-demo.local)"
   type        = string
-  default     = "https://localhost"
+  default     = "https://devops-demo.local"
+}
+
+variable "ingress_host" {
+  description = "Hostname for ingress rules"
+  type        = string
+  default     = "devops-demo.local"
 }

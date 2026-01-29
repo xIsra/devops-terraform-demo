@@ -37,7 +37,7 @@ resource "kind_cluster" "this" {
       image = "kindest/node:${var.kubernetes_version}"
 
       # Configure port mappings for ingress controller
-      # This allows accessing services via localhost:80 and localhost:443
+      # This allows accessing services via the ingress host (e.g., devops-demo.local)
       extra_port_mappings {
         container_port = 80
         host_port      = 80
@@ -84,7 +84,7 @@ resource "kind_cluster" "this" {
 # -----------------------------------------------------------------------------
 # Infrastructure components are organized in separate files:
 # - namespaces.tf (Environment namespace)
-# - ingress.tf (Caddy ingress controller with automatic HTTPS)
+# - ingress.tf (Nginx ingress controller)
 # - database.tf (PostgreSQL)
 # - observability.tf (Prometheus, Grafana, Loki, OTEL)
 #

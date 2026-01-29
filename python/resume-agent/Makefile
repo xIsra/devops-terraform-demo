@@ -4,6 +4,8 @@ CLUSTER_NAME ?= devops-demo
 
 .PHONY: build load test dev
 
+# Build
+# Docker cache will automatically invalidate when source code changes
 build:
 	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
 

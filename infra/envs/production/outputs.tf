@@ -25,17 +25,17 @@ output "services" {
     resume_agent = {
       service   = module.resume_agent.service_name
       namespace = module.resume_agent.namespace
-      endpoint  = "http://${var.ingress_host}/resume-api"
+      endpoint  = "https://${var.ingress_host}/resume-api"
     }
     server = {
       service   = module.server.service_name
       namespace = module.server.namespace
-      endpoint  = "http://${var.ingress_host}/api"
+      endpoint  = "https://${var.ingress_host}/api"
     }
     web = {
       service   = module.web.service_name
       namespace = module.web.namespace
-      endpoint  = "http://${var.ingress_host}/"
+      endpoint  = "https://${var.ingress_host}/"
     }
   }
 }
@@ -49,9 +49,12 @@ output "usage_instructions" {
     ╚═══════════════════════════════════════════════════════════════════════╝
     
     Access your applications at:
-    • Web: http://localhost/
-    • Server API: http://localhost/api
-    • Resume Agent: http://localhost/resume-api
+    • Web: https://${var.ingress_host}/
+    • Server API: https://${var.ingress_host}/api
+    • Resume Agent: https://${var.ingress_host}/resume-api
+    
+    Make sure to add ${var.ingress_host} to /etc/hosts:
+    $ echo "127.0.0.1 ${var.ingress_host}" | sudo tee -a /etc/hosts
     
     Observability:
     • Grafana: http://localhost:30080 (admin/admin)

@@ -65,3 +65,9 @@ variable "resources" {
   })
   default = {}
 }
+
+variable "ingress_host" {
+  description = "Hostname for ingress rules"
+  type        = string
+  default     = "devops-demo.local"
+}

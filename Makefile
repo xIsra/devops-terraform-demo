@@ -1,11 +1,65 @@
-.PHONY: all infra-init infra-plan infra-apply infra-destroy build-all load-all deploy-all clean status restart ensure-cluster setup-kubeconfig help
+.PHONY: all init infra-init infra-plan infra-apply infra-destroy build-all load-all deploy-all clean status restart ensure-cluster setup-kubeconfig help
 
 CLUSTER_NAME ?= devops-demo
 NAMESPACE ?= production
+INGRESS_HOST ?= devops-demo.local
 TF_DIR := infra
 TF_ENV_DIR := $(CURDIR)/$(TF_DIR)/envs/$(NAMESPACE)
 TF_VARS := $(TF_ENV_DIR)/terraform.tfvars
 TF_SCRIPTS := $(CURDIR)/$(TF_DIR)/scripts
+TF_VARS_EXAMPLE := $(TF_ENV_DIR)/terraform.tfvars.example
+
+# === INITIALIZATION ===
+init:
+	@echo "=== Initializing Development Environment ==="
+	@echo ""
+	@# Check required tools
+	@echo "Checking required tools..."
+	@command -v docker >/dev/null 2>&1 || { echo "❌ Error: docker is not installed. Install from https://docs.docker.com/get-docker/"; exit 1; }
+	@command -v terraform >/dev/null 2>&1 || { echo "❌ Error: terraform is not installed. Install from https://developer.hashicorp.com/terraform/downloads"; exit 1; }
+	@command -v kubectl >/dev/null 2>&1 || { echo "❌ Error: kubectl is not installed. Install from https://kubernetes.io/docs/tasks/tools/"; exit 1; }
+	@command -v kind >/dev/null 2>&1 || { echo "❌ Error: kind is not installed. Install from https://kind.sigs.k8s.io/"; exit 1; }
+	@echo "✅ All required tools are installed"
+	@echo ""
+	@# Check Docker is running
+	@echo "Checking Docker daemon..."
+	@docker info >/dev/null 2>&1 || { echo "❌ Error: Docker daemon is not running. Start Docker and try again."; exit 1; }
+	@echo "✅ Docker daemon is running"
+	@echo ""
+	@# Setup /etc/hosts entry
+	@echo "Setting up /etc/hosts entry for $(INGRESS_HOST)..."
+	@if grep -q "$(INGRESS_HOST)" /etc/hosts 2>/dev/null; then \
+		echo "✅ $(INGRESS_HOST) already exists in /etc/hosts"; \
+	else \
+		echo "Adding $(INGRESS_HOST) to /etc/hosts (requires sudo)..."; \
+		echo "127.0.0.1 $(INGRESS_HOST)" | sudo tee -a /etc/hosts >/dev/null && \
+		echo "✅ Added $(INGRESS_HOST) to /etc/hosts" || \
+		{ echo "⚠️  Warning: Could not add to /etc/hosts. You may need to run manually:"; \
+		  echo "   echo '127.0.0.1 $(INGRESS_HOST)' | sudo tee -a /etc/hosts"; }; \
+	fi
+	@echo ""
+	@# Check/create terraform.tfvars
+	@echo "Checking Terraform configuration..."
+	@if [ ! -f $(TF_VARS) ]; then \
+		if [ -f $(TF_VARS_EXAMPLE) ]; then \
+			echo "⚠️  $(TF_VARS) not found. Creating from example..."; \
+			cp $(TF_VARS_EXAMPLE) $(TF_VARS); \
+			echo "✅ Created $(TF_VARS)"; \
+			echo "⚠️  Please edit $(TF_VARS) and configure your secrets (especially openai_api_key)"; \
+		else \
+			echo "❌ Error: $(TF_VARS_EXAMPLE) not found. Cannot create $(TF_VARS)"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "✅ $(TF_VARS) exists"; \
+	fi
+	@echo ""
+	@echo "=== Initialization Complete ==="
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Edit $(TF_VARS) and configure your secrets"
+	@echo "  2. Run 'make infra-apply' to deploy infrastructure"
+	@echo "  3. Run 'make all' for full workflow (build + deploy)"
 
 # Helper to ensure Kind cluster exists (via Terraform)
 ensure-cluster:
@@ -24,7 +78,7 @@ setup-kubeconfig: ensure-cluster
 		kubectl config use-context kind-$(CLUSTER_NAME) 2>/dev/null || true
 
 # === INFRASTRUCTURE ===
-infra-init:
+infra-init: init
 	@$(TF_SCRIPTS)/init.sh $(NAMESPACE)
 
 infra-plan: infra-init
@@ -170,15 +224,23 @@ restart: setup-kubeconfig
 		echo "Error: DEPLOYMENT is required. Usage: make restart DEPLOYMENT=server"; \
 		exit 1; \
 	fi
-	@echo "Restarting deployment $(DEPLOYMENT)..."
-	@kubectl rollout restart deployment/$(DEPLOYMENT) -n $(NAMESPACE)
+	@echo "Restarting deployment $(DEPLOYMENT) to pick up new images..."
+	@# Force pod recreation by updating an annotation (triggers rollout)
+	@# This ensures pods are recreated and will use the newly loaded image in Kind
+	@kubectl annotate deployment $(DEPLOYMENT) -n $(NAMESPACE) \
+		restarted-at="$$(date +%s)" --overwrite || true
+	@echo "Waiting for rollout to complete..."
 	@kubectl rollout status deployment/$(DEPLOYMENT) -n $(NAMESPACE) --timeout=120s
+	@echo "Deployment $(DEPLOYMENT) restarted successfully"
 
 help:
 	@echo "Usage: make [target] [NAMESPACE=staging]"
 	@echo ""
+	@echo "Initialization:"
+	@echo "  init            Initialize development environment (tools, /etc/hosts, config)"
+	@echo ""
 	@echo "Infrastructure:"
-	@echo "  infra-init      Initialize Terraform"
+	@echo "  infra-init      Initialize Terraform (runs init automatically)"
 	@echo "  infra-plan      Plan infrastructure changes"
 	@echo "  infra-apply     Apply infrastructure"
 	@echo "  infra-destroy   Destroy infrastructure"

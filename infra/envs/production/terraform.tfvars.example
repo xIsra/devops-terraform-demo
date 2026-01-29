@@ -27,7 +27,7 @@ db_name         = "postgres"
 db_storage_size = "5Gi"
 
 # Ingress Configuration
-ingress_host = "localhost"  # Optional, defaults to localhost
+ingress_host = "devops-demo.local"  # Add to /etc/hosts: 127.0.0.1 devops-demo.local
 
 # Optional
 openai_model = "gpt-4o-mini"

@@ -25,3 +25,9 @@ variable "openai_model" {
   type        = string
   default     = "gpt-4o-mini"
 }
+
+variable "ingress_host" {
+  description = "Hostname for ingress rules"
+  type        = string
+  default     = "devops-demo.local"
+}

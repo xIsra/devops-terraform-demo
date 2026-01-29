@@ -8,6 +8,7 @@ module "app" {
   replicas  = var.replicas
 
   ingress_path = "/resume-api"
+  ingress_host = var.ingress_host
   health_path  = "/api/v1/health"
 
   secrets = {

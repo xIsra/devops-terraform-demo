@@ -1,52 +1,6 @@
 # K8s Cluster Infrastructure
 
-Production-ready Infrastructure as Code (IaC) solution for deploying microservices to Kubernetes with centralized Terraform modules, observability stack, and CI/CD workflows.
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Kubernetes Cluster (Any Provider)                 │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │                     Nginx Ingress Controller                   │  │
-│  │                   (localhost:80 / localhost:443)               │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-│                                  │                                   │
-│           ┌──────────────────────┼──────────────────────┐           │
-│           ▼                      ▼                      ▼           │
-│   ┌───────────────┐      ┌───────────────┐      ┌───────────────┐  │
-│   │  /            │      │  /api         │      │  /resume-api  │  │
-│   │  Web (React) │      │  Server (tRPC)│      │  Resume Agent │  │
-│   │  ┌─────────┐  │      │  ┌─────────┐  │      │  ┌─────────┐  │  │
-│   │  │ Pod 1   │  │      │  │ Pod 1   │  │      │  │ Pod 1   │  │  │
-│   │  │ Pod 2   │  │      │  │ Pod 2   │  │      │  │ Pod 2   │  │  │
-│   │  └─────────┘  │      │  └─────────┘  │      │  └─────────┘  │  │
-│   └───────────────┘      └───────────────┘      └───────────────┘  │
-│                                  │                                   │
-│                                  ▼                                   │
-│                        ┌──────────────────┐                         │
-│                        │  PostgreSQL      │                         │
-│                        │  (StatefulSet)   │                         │
-│                        └──────────────────┘                         │
-│                                                                       │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │              Observability Stack (monitoring namespace)        │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │  │
-│  │  │Prometheus│  │ Grafana  │  │   Loki   │  │ OpenTele │     │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │  │
-│  └───────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-## Features
-
-- **Centralized K8s Definitions**: All Kubernetes resources defined in Terraform using reusable modules
-- **Multi-Environment Support**: Deploy to `production`, `staging`, or `testing` namespaces
-- **Service Autonomy**: Each service owns its build process, Terraform handles deployments
-- **Full Observability**: Prometheus metrics, Grafana dashboards, Loki logs, OpenTelemetry traces
-- **Managed Database**: PostgreSQL StatefulSet simulating cloud-managed database
-- **CI/CD Workflows**: Separate workflows for builds (auto), deploys (manual), and infrastructure
-- **Cluster Agnostic**: Works with any Kubernetes cluster (Kind, EKS, GKE, AKS, etc.)
+Quick start guide for deploying microservices to Kubernetes. See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture and design decisions.
 
 ## Prerequisites
 
@@ -79,139 +33,56 @@ chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 ```
 
-## Project Structure
-
-```
-asaph-devops-test/
-├── Makefile                          # Root orchestrator
-├── infra/
-│   ├── modules/                      # Reusable Terraform modules
-│   │   ├── app/                      # Base Kubernetes service module
-│   │   ├── web/                      # Web service wrapper module
-│   │   ├── server/                   # Server service wrapper module
-│   │   ├── resume-agent/             # Resume-agent service wrapper module
-│   │   ├── server-migration/         # Database migration job module
-│   │   ├── queue/                    # Queue module (placeholder)
-│   │   ├── namespace/                # Namespace module
-│   │   ├── postgresql/               # PostgreSQL module
-│   │   └── observability/            # Observability module
-│   ├── envs/                         # Environment-specific configs
-│   │   └── production/               # Production environment
-│   │       ├── main.tf                # Root module
-│   │       ├── variables.tf          # Environment variables
-│   │       ├── outputs.tf            # Outputs
-│   │       ├── providers.tf          # Provider configs
-│   │       ├── backend.tf            # Backend configuration
-│   │       ├── namespaces.tf          # Environment namespaces
-│   │       ├── ingress.tf            # Nginx ingress controller
-│   │       ├── database.tf            # PostgreSQL
-│   │       ├── observability.tf       # Monitoring stack
-│   │       ├── web.tf                 # Web service
-│   │       ├── server.tf              # Server service
-│   │       ├── server-migration.tf    # Migration job
-│   │       ├── resume-agent.tf        # Resume-agent service
-│   │       ├── terraform.tfvars       # Environment variables (gitignored)
-│   │       └── terraform.tfvars.example  # Template
-│   ├── shared/                       # Shared configuration
-│   └── scripts/                     # Helper scripts
-│       ├── init.sh
-│       ├── plan.sh
-│       ├── apply.sh
-│       └── destroy.sh
-├── python/
-│   └── resume-agent/
-│       ├── Dockerfile
-│       ├── Makefile                 # Build only
-│       └── src/
-├── typescript/
-│   ├── Makefile                     # Build server/web
-│   └── apps/
-│       ├── server/
-│       └── web/
-└── .github/
-    └── workflows/
-        ├── build.yml                # Build workflow (auto/manual)
-        ├── deploy.yml               # Deploy workflow (manual)
-        └── infra.yml                # Infrastructure workflow (manual)
-```
-
 ## Quick Start
 
-### 1. Setup Secrets
+### 1. Initialize Environment
 
 ```bash
-cd infra/envs/production
-cp terraform.tfvars.example terraform.tfvars
-
-# Edit terraform.tfvars with your secrets
-vim terraform.tfvars
+# This will:
+# - Check required tools are installed
+# - Verify Docker is running
+# - Add devops-demo.local to /etc/hosts
+# - Create terraform.tfvars from example if missing
+make init
 ```
 
-Required secrets:
+### 2. Configure Secrets
 
-- `openai_api_key` - OpenAI API key for resume-agent
-- `db_username`, `db_password`, `db_name` - Database credentials
-
-### 2. Setup Local Cluster (Kind)
-
-For local development, ensure Kind is installed and create the cluster:
+Edit `infra/envs/production/terraform.tfvars` and set your secrets:
 
 ```bash
-# Ensure Kind cluster exists (creates via Terraform if needed)
-make ensure-cluster NAMESPACE=staging
+# Required secrets:
+openai_api_key = "sk-your-key-here"
+db_username     = "postgres"
+db_password     = "postgres"
+db_name         = "postgres"
+```
+
+### 3. Deploy Everything
+
+```bash
+# Full workflow: init → build → deploy → health checks
+make all
 ```
 
 This will:
 
-- Check if the Kind cluster exists
-- If not, create it via Terraform (manages cluster lifecycle)
-- Set up kubeconfig for kubectl access
-
-**Note:** The cluster is managed by Terraform, so it will be created automatically during `infra-apply` if it doesn't exist. However, running `ensure-cluster` first ensures the cluster is ready before initializing Terraform.
-
-### 3. Deploy Infrastructure
-
-```bash
-# Initialize Terraform (runs in infra/envs/production)
-make infra-init NAMESPACE=production
-
-# Plan changes
-make infra-plan NAMESPACE=production
-
-# Apply infrastructure (cluster, ingress, database, observability)
-make infra-apply NAMESPACE=production
-```
-
-**Note:** All Terraform commands run from `infra/envs/<environment>/`. The Makefile automatically handles the correct directory.
-
-### 3. Build and Deploy Services
-
-```bash
-# Build all service images
-make build-all
-
-# For Kind (local): Load images into cluster
-make load-all
-
-# For cloud: Push images to registry (ECR, GCR, etc.)
-# docker push <registry>/resume-agent:latest
-# docker push <registry>/server:latest
-# docker push <registry>/web:latest
-
-# Deploy all services
-make deploy-all NAMESPACE=production
-
-# Or use the full workflow (infra + build + deploy + health checks)
-make all NAMESPACE=production
-```
+- Initialize Terraform
+- Build all service images
+- Load images into Kind cluster
+- Deploy infrastructure (cluster, ingress, database, observability)
+- Deploy all services
+- Run health checks
 
 ### 4. Access Applications
 
-| Service      | URL                         | Description             |
-| ------------ | --------------------------- | ----------------------- |
-| Web          | http://localhost/           | React frontend          |
-| Server API   | http://localhost/api        | tRPC API endpoints      |
-| Resume Agent | http://localhost/resume-api | FastAPI resume analysis |
+| Service      | URL                                  | Description             |
+| ------------ | ------------------------------------ | ----------------------- |
+| Web          | https://devops-demo.local/           | React frontend          |
+| Server API   | https://devops-demo.local/api        | tRPC API endpoints      |
+| Resume Agent | https://devops-demo.local/resume-api | FastAPI resume analysis |
+
+**Note**: Caddy automatically provides HTTPS with self-signed certificates for `.local` domains. Your browser may show a security warning - click "Advanced" and "Proceed" to accept the certificate.
 
 ### 5. Access Observability
 
@@ -227,225 +98,48 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:909
 # Access Prometheus: http://localhost:9090
 ```
 
-## Configuration
+## Commands
 
-### Environment Variables
-
-Deploy to different environments. Each environment has its own directory under `infra/envs/`:
+### Initialization
 
 ```bash
-# Production (default)
-make all NAMESPACE=production
-
-# To add staging, create infra/envs/staging/ with config files
-# Then deploy with:
-make all NAMESPACE=staging
+make init            # Initialize development environment (tools, /etc/hosts, config)
 ```
-
-### Service Configuration
-
-Edit service files in `infra/envs/production/` to modify service settings:
-
-```hcl
-# infra/envs/production/resume-agent.tf
-module "resume_agent" {
-  source = "../../modules/resume-agent"
-
-  namespace     = var.environment
-  image_version = var.resume_agent_version
-  replicas      = var.resume_agent_replicas  # Adjust in tfvars
-  openai_api_key = var.openai_api_key
-  openai_model   = var.openai_model
-}
-```
-
-Service-specific wrapper modules encapsulate defaults:
-
-- `modules/web` - Web frontend service
-- `modules/server` - Server API service
-- `modules/resume-agent` - Resume agent service
-- `modules/server-migration` - Database migration job
-
-All wrapper modules delegate to `modules/app` for common Kubernetes resources (deployment, service, ingress, secrets, configmaps).
-
-### Variable Reference
-
-| Variable                | Description              | Default       |
-| ----------------------- | ------------------------ | ------------- |
-| `environment`           | Deployment environment   | `production`  |
-| `cluster_name`          | Cluster name (Kind only) | `devops-demo` |
-| `resume_agent_version`  | Image tag                | `latest`      |
-| `server_version`        | Image tag                | `latest`      |
-| `web_version`           | Image tag                | `latest`      |
-| `resume_agent_replicas` | Number of replicas       | `2`           |
-| `server_replicas`       | Number of replicas       | `2`           |
-| `web_replicas`          | Number of replicas       | `2`           |
-
-## CI/CD Workflows
-
-### Build Workflow (`build.yml`)
-
-**Triggers:**
-
-- Auto: Push/PR to `python/resume-agent/**`, `typescript/apps/**`
-- Manual: `workflow_dispatch` with `service` parameter
-
-**Usage:**
-
-```bash
-# Auto-triggered on code changes
-# Or manually via GitHub UI: Actions → Build Service → Run workflow
-```
-
-### Deploy Workflow (`deploy.yml`)
-
-**Triggers:**
-
-- Manual only: `workflow_dispatch`
-
-**Parameters:**
-
-- `service`: `resume-agent`, `server`, or `web`
-- `environment`: `production`, `staging`, `testing`
-- `version`: Image tag/version
-
-**Usage:**
-
-```bash
-# Via GitHub UI: Actions → Deploy Service → Run workflow
-# Select service, environment, and version
-```
-
-### Infrastructure Workflow (`infra.yml`)
-
-**Triggers:**
-
-- Manual only: `workflow_dispatch`
-
-**Parameters:**
-
-- `action`: `plan`, `apply`, or `destroy`
-- `environment`: Target environment
-
-**Usage:**
-
-```bash
-# Via GitHub UI: Actions → Infrastructure → Run workflow
-# Select action (plan/apply/destroy) and environment
-```
-
-### Running Locally with Act
-
-[Act](https://github.com/nektos/act) allows running GitHub Actions locally:
-
-```bash
-# Install act
-brew install act  # macOS
-
-# Create .secrets file (gitignored)
-cat > .secrets << EOF
-OPENAI_API_KEY=sk-xxx
-DB_USERNAME=postgres
-DB_PASSWORD=postgres
-DB_NAME=postgres
-EOF
-
-# Run workflows locally with act
-act -j build --secret-file .secrets -W .github/workflows/build.yml
-act -j deploy --secret-file .secrets -W .github/workflows/deploy.yml
-act -j terraform --secret-file .secrets -W .github/workflows/infra.yml
-```
-
-## Makefile Commands
 
 ### Infrastructure
 
 ```bash
-make infra-init          # Initialize Terraform
-make infra-plan          # Plan infrastructure changes
-make infra-apply         # Apply infrastructure (includes auto-import of existing resources)
-make infra-destroy       # Destroy infrastructure
+make infra-init      # Initialize Terraform (runs init automatically)
+make infra-plan      # Plan infrastructure changes
+make infra-apply     # Apply infrastructure (includes auto-import of existing resources)
+make infra-destroy   # Destroy infrastructure
 ```
 
 ### Build & Deploy
 
 ```bash
-make build-all           # Build all service images
-make load-all            # Load images into Kind cluster
-make deploy-all          # Deploy all services
+make build-all       # Build all service images
+make load-all        # Load images into Kind cluster
+make deploy-all      # Deploy all services
 ```
 
 ### Full Workflow
 
 ```bash
-make all                 # Complete deployment: infra + build + deploy + health checks
-make clean               # Destroy cluster and infrastructure
+make all             # Complete deployment: infra + build + deploy + health checks
+make clean           # Destroy cluster and infrastructure
 ```
 
 ### Utilities
 
 ```bash
-make ensure-cluster      # Ensure Kind cluster exists (creates via Terraform if needed)
-make status              # Show cluster status (pods and ingress)
-make restart             # Restart a deployment (usage: make restart DEPLOYMENT=server)
-make help                # Show available commands
+make ensure-cluster  # Ensure Kind cluster exists (creates via Terraform if needed)
+make status          # Show cluster status (pods and ingress)
+make restart         # Restart a deployment (usage: make restart DEPLOYMENT=server)
+make help            # Show available commands
 ```
 
-## Design Decisions
-
-### Why Centralized Terraform?
-
-- **Single Source of Truth**: All K8s definitions in one place
-- **No YAML Duplication**: Reusable modules eliminate repetition
-- **Environment Consistency**: Same code deploys to all environments
-- **Version Control**: Full history of infrastructure changes
-- **Service Wrapper Modules**: Encapsulate service-specific defaults while reusing base `app` module
-
-### Why Service-Owned Builds?
-
-- **Service Autonomy**: Teams control their build process
-- **Technology Flexibility**: Each service uses its own tools
-- **Independent CI**: Build failures don't block other services
-
-### Why Separate Build/Deploy Workflows?
-
-- **Build**: Fast feedback on code changes (auto-triggered)
-- **Deploy**: Controlled releases (manual, requires approval)
-- **Infrastructure**: Separate lifecycle from applications
-
-### Why Cluster Agnostic?
-
-- **Flexibility**: Works with any Kubernetes provider
-- **Portability**: Same code for local dev and production
-- **No Vendor Lock-in**: Easy to switch providers
-
-## Services
-
-### Resume Agent (`python/resume-agent/`)
-
-FastAPI service for resume analysis using OpenAI.
-
-- **Port**: 8000
-- **Health**: `/api/v1/health`
-- **Endpoints**: `/api/v1/analyze`, `/api/v1/generate-summary`, `/api/v1/tailor`
-
-### Server (`typescript/apps/server/`)
-
-Hono + tRPC API server.
-
-- **Port**: 3000
-- **Health**: `/`
-- **Features**: tRPC endpoints, CORS, database integration
-
-### Web (`typescript/apps/web/`)
-
-React Router v7 frontend application.
-
-- **Port**: 3000
-- **Health**: `/`
-- **Features**: TailwindCSS, PWA, dark mode
-
-## Troubleshooting
+## Common Issues
 
 ### Pods Not Starting
 
@@ -464,7 +158,7 @@ kubectl describe pod -n production <pod-name>
 
 ```bash
 # Ensure Kind cluster exists
-make ensure-cluster NAMESPACE=production
+make ensure-cluster
 
 # Or create cluster manually (not recommended - use Terraform)
 kind create cluster --name devops-demo
@@ -484,13 +178,19 @@ make load-all
 
 ```bash
 # Check ingress controller
-kubectl get pods -n ingress-nginx
+kubectl get pods -n caddy-system
 
 # Check ingress resources
 kubectl get ingress -n production
 
 # View ingress controller logs
-kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller
+kubectl logs -n caddy-system -l app.kubernetes.io/name=caddy-ingress-controller
+
+# Verify domain is in /etc/hosts
+grep devops-demo.local /etc/hosts
+
+# If missing, add it:
+echo "127.0.0.1 devops-demo.local" | sudo tee -a /etc/hosts
 ```
 
 ### Database Connection Issues
@@ -506,15 +206,69 @@ kubectl exec -it -n database postgresql-0 -- psql -U postgres -d postgres
 kubectl get svc -n database
 ```
 
+### SSL Certificate Warnings
+
+When accessing `https://devops-demo.local`, browsers show a security warning because Caddy uses self-signed certificates for `.local` domains. This is expected for local development:
+
+1. Click "Advanced" or "Show Details"
+2. Click "Proceed to devops-demo.local" or "Accept the Risk and Continue"
+
+The certificate is valid and secure for local development.
+
+### Terraform State Issues
+
+If Terraform state is out of sync:
+
+```bash
+# Refresh state
+cd infra/envs/production
+terraform refresh -var-file=terraform.tfvars
+
+# Remove stale resources from state
+terraform state rm <resource-address>
+
+# Import existing resources
+terraform import <resource-address> <resource-id>
+```
+
+### Migration Job Failing
+
+```bash
+# Check migration job status
+kubectl get jobs -n production
+
+# View migration logs
+SERVER_VERSION=$(grep '^server_version' infra/envs/production/terraform.tfvars | cut -d'"' -f2)
+MIGRATION_JOB_NAME=server-migration-$(echo $SERVER_VERSION | tr '.' '-')
+kubectl logs job/$MIGRATION_JOB_NAME -n production
+
+# Restart migration
+kubectl delete job $MIGRATION_JOB_NAME -n production
+make deploy-all  # Will recreate the job
+```
+
 ## Cleanup
 
 ```bash
 # Destroy everything (infrastructure + cluster)
-make clean NAMESPACE=production
+make clean
 
 # Or destroy infrastructure only
-make infra-destroy NAMESPACE=production
+make infra-destroy
 ```
+
+## Next Steps
+
+- See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture and design decisions
+- Check `.github/workflows/` for CI/CD workflow details
+- Review `infra/envs/production/terraform.tfvars.example` for configuration options
+
+## Sources
+
+- https://developer.hashicorp.com/terraform/tutorials
+- https://github.com/hashicorp/terraform-guides/tree/master/infrastructure-as-code
+- https://medium.com/schibsted-engineering/ultimate-terraform-project-structure-9fc7e79f6bc6
+- https://github.com/MarcinKasprowicz/ultimate-terraform-folder-structure
 
 ## License
 

@@ -15,7 +15,13 @@ variable "replicas" {
 }
 
 variable "api_base_url" {
-  description = "API base URL for the web application (e.g., http://localhost/api)"
+  description = "API base URL for the web application (e.g., https://devops-demo.local/api)"
   type        = string
-  default     = "http://localhost/api"
+  default     = "https://devops-demo.local/api"
+}
+
+variable "ingress_host" {
+  description = "Hostname for ingress rules"
+  type        = string
+  default     = "devops-demo.local"
 }

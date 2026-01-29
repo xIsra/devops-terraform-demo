@@ -7,8 +7,10 @@ module "app" {
   port      = 3000
   replicas  = var.replicas
 
-  ingress_path = "/api"
-  health_path  = "/health"
+  ingress_path    = "/api"
+  ingress_rewrite = false # Use Prefix matching (more specific than /) instead of regex
+  ingress_host    = var.ingress_host
+  health_path     = "/health"
 
   secrets = {
     DATABASE_URL = var.database_url

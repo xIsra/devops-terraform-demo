@@ -64,7 +64,7 @@ resource "kubernetes_deployment" "this" {
         container {
           name              = var.name
           image             = var.image
-          image_pull_policy = "Never" # Use Never for local Kind images
+          image_pull_policy = "IfNotPresent" # Use IfNotPresent to pull new images when tag changes
 
           port {
             container_port = var.port
@@ -167,7 +167,9 @@ resource "kubernetes_service" "this" {
 }
 
 # Ingress
-# Caddy automatically handles HTTPS - no TLS configuration needed
+# Nginx ingress controller handles routing
+# Note: Kubernetes ingress evaluates paths by specificity (longer paths first)
+# So /api will match before /, ensuring proper routing
 resource "kubernetes_ingress_v1" "this" {
   metadata {
     name      = "${var.name}-ingress"
@@ -176,10 +178,10 @@ resource "kubernetes_ingress_v1" "this" {
   }
 
   spec {
-    ingress_class_name = "caddy"
+    ingress_class_name = "nginx"
 
     rule {
-      host = "localhost"
+      host = var.ingress_host
 
       http {
         path {

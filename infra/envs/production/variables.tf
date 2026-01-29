@@ -124,7 +124,7 @@ variable "db_storage_size" {
 # Ingress Configuration
 # -----------------------------------------------------------------------------
 variable "ingress_host" {
-  description = "Hostname for ingress (use localhost for local development)"
+  description = "Hostname for ingress (e.g., devops-demo.local for local development with SSL)"
   type        = string
-  default     = "localhost"
+  default     = "devops-demo.local"
 }
