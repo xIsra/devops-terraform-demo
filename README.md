@@ -37,9 +37,109 @@ sudo mv ./kind /usr/local/bin/kind
 curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
-## Quick Start with Act
+## Architecture Overview
 
-### 1. Install Act
+This project uses:
+
+- **Kind** for local Kubernetes cluster
+- **Docker Registry** (deployed in-cluster) for container images
+- **Terraform** for infrastructure as code
+- **GitHub Actions** for CI/CD workflows
+
+### Docker Registry
+
+A local Docker registry is automatically deployed in the cluster to store container images. Images are:
+
+- Built locally or in CI
+- Pushed to `localhost:5000` (via port-forward) or the registry service
+- Pulled by pods using the cluster-internal registry URL
+
+**Registry Access:**
+
+- **Cluster-internal**: `docker-registry.docker-registry.svc.cluster.local:5000`
+- **External (CI/CD)**: `localhost:5000` (via kubectl port-forward)
+
+## Quick Start
+
+### Option 1: Local Development (Makefile)
+
+```bash
+# 1. Initialize environment
+make init
+
+# 2. Configure secrets
+# Edit infra/envs/production/terraform.tfvars with your secrets
+
+# 3. Deploy everything
+make all
+```
+
+### Option 2: GitHub Actions (Remote Cluster)
+
+#### 1. Set Up Remote Cluster
+
+On the machine where the cluster will run:
+
+```bash
+# Initialize and create cluster
+make init
+make infra-apply
+
+# Or manually:
+cd infra/envs/production
+terraform init
+terraform apply -var-file=terraform.tfvars -auto-approve
+```
+
+#### 2. Export Kubeconfig for GitHub Actions
+
+```bash
+# Export kubeconfig from the cluster
+kind export kubeconfig --name devops-demo > kubeconfig.yaml
+
+# Or if kubectl is already configured:
+kubectl config view --flatten > kubeconfig.yaml
+```
+
+#### 3. Add GitHub Secret
+
+In your GitHub repository:
+
+1. Go to **Settings** → **Secrets and variables** → **Actions**
+2. Click **New repository secret**
+3. Name: `KUBECONFIG`
+4. Value: Paste the entire contents of `kubeconfig.yaml`
+5. Click **Add secret**
+
+#### 4. Run Workflows
+
+**Via GitHub Actions UI:**
+
+1. Go to **Actions** tab
+2. Select workflow (e.g., "Dev Full Setup")
+3. Click **Run workflow**
+4. Choose namespace and run
+
+**Via GitHub CLI:**
+
+```bash
+gh workflow run dev-full-setup.yml -f namespace=production
+```
+
+**Via Act (local testing):**
+
+```bash
+# Create .secrets file
+echo "KUBECONFIG=$(cat kubeconfig.yaml | base64)" > .secrets
+echo "OPENAI_API_KEY=sk-your-key" >> .secrets
+
+# Run workflow
+act -j dev-full-setup --secret-file .secrets --input namespace=production
+```
+
+### Option 3: Act (Local Testing)
+
+#### 1. Install Act
 
 **macOS:**
 
@@ -53,38 +153,55 @@ brew install act
 curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
-### 2. Create Secrets File
+#### 2. Create Secrets File
 
 ```bash
 cp .secrets.example .secrets
-# Edit .secrets with your OPENAI_API_KEY
+# Edit .secrets with your OPENAI_API_KEY and KUBECONFIG
 ```
 
-### 3. Configure Terraform Variables
+#### 3. Configure Terraform Variables
 
-Edit `infra/envs/production/terraform.tfvars` (or create from `terraform.tfvars.example`) and set your database credentials:
+Edit `infra/envs/production/terraform.tfvars` (or create from `terraform.tfvars.example`):
 
 ```hcl
 db_username = "postgres"
 db_password = "postgres"
 db_name     = "postgres"
+openai_api_key = "sk-your-key-here"
 ```
 
-### 4. Full Setup (One Command)
+#### 4. Full Setup (One Command)
 
 ```bash
-act -j dev-full-setup --secret-file .secrets
+act -j dev-full-setup --secret-file .secrets --input namespace=production
 ```
 
 This will:
 
 - Initialize Terraform
-- Create Kind cluster
+- Create Kind cluster (if not exists)
+- Deploy Docker registry
 - Deploy infrastructure (database, observability, ingress)
 - Build all service images
+- Push images to registry
 - Deploy all services
 
-### 5. Deploy a Service
+### 5. Verify Setup
+
+```bash
+# Check registry is running
+kubectl get pods -n docker-registry
+
+# Check services are using registry images
+kubectl get deployments -n production -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[0].image}{"\n"}{end}'
+
+# Should show images like:
+# server: docker-registry.docker-registry.svc.cluster.local:5000/server:latest
+# web: docker-registry.docker-registry.svc.cluster.local:5000/web:latest
+```
+
+### 6. Deploy a Service
 
 Deploy a specific service with a version tag:
 
@@ -96,7 +213,7 @@ act -j deploy-service --input service=server --input version=v1.0.0 --input name
 act -j deploy-service --input service=web --input version=v2.0.0 --input namespace=staging --secret-file .secrets
 ```
 
-### 6. Access Applications
+### 7. Access Applications
 
 | Service      | URL                                  | Description             |
 | ------------ | ------------------------------------ | ----------------------- |
@@ -106,7 +223,7 @@ act -j deploy-service --input service=web --input version=v2.0.0 --input namespa
 
 **Note**: Nginx Ingress provides routing for `.local` domains and can use self-signed certificates. Your browser may show a security warning - click "Advanced" and "Proceed" to accept the certificate.
 
-### 7. Access Observability
+### 8. Access Observability
 
 ```bash
 # Grafana dashboard
@@ -122,47 +239,108 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:909
 
 ## Available Workflows
 
+All workflows can be run locally with `act` or in GitHub Actions CI. Workflows use `workflow_dispatch` triggers with configurable inputs.
+
+**Note:** All workflows require the `KUBECONFIG` secret to be configured in GitHub Actions (or `.secrets` file for local testing with `act`).
+
 ### Infrastructure Workflows
 
+Manage cluster and base infrastructure:
+
 ```bash
-# Initialize cluster and base infrastructure
+# Initialize cluster and base infrastructure (namespaces, database, observability)
 act -j infra-init --input namespace=production --secret-file .secrets
 
-# Plan infrastructure changes
+# Preview infrastructure changes before applying
 act -j infra-plan --input namespace=production --secret-file .secrets
 
 # Apply infrastructure changes
 act -j infra-apply --input namespace=production --secret-file .secrets
 
-# Destroy infrastructure
-act -j infra-destroy --input namespace=production --secret-file .secrets
+# Destroy infrastructure (optionally destroy cluster)
+act -j infra-destroy --input namespace=production --input destroy_cluster=false --secret-file .secrets
 ```
+
+**Available namespaces:** `production`, `staging`, `testing`
 
 ### Service Workflows
 
-```bash
-# Build a service image
-act -j build-service --input service=server --input version=v1.0.0
+Build and deploy individual services:
 
-# Deploy a service
+```bash
+# Build a service image and push to registry (server, web, resume-agent, or migration)
+act -j build-service --input service=server --input version=v1.0.0 --secret-file .secrets
+
+# Deploy a service with version tag (builds, pushes to registry, then deploys)
 act -j deploy-service --input service=server --input version=v1.0.0 --input namespace=production --secret-file .secrets
+
+# Deploy to staging
+act -j deploy-service --input service=web --input version=v2.0.0 --input namespace=staging --secret-file .secrets
 ```
+
+**Service options:** `server`, `web`, `resume-agent`  
+**Note:**
+
+- Deploying `server` automatically runs migrations first
+- All images are pushed to the Docker registry before deployment
+- Workflows automatically port-forward the registry for image pushes
 
 ### Dev Team Workflows
 
-```bash
-# Build all services
-act -j dev-build-all --input version=v1.0.0
+Convenience workflows for development:
 
-# Full local setup (init + infra + build + deploy)
+```bash
+# Build all services with the same version tag and push to registry
+act -j dev-build-all --input version=v1.0.0 --secret-file .secrets
+
+# Complete local setup (init + infra + build + push + deploy)
+# This is the recommended way to get started
 act -j dev-full-setup --input namespace=production --secret-file .secrets
 ```
+
+**What happens:**
+
+1. Creates/verifies Kind cluster exists
+2. Deploys Docker registry
+3. Deploys base infrastructure (database, observability, ingress)
+4. Builds all service images
+5. Pushes images to registry
+6. Deploys all services
+
+### Workflow Inputs
+
+Most workflows support these common inputs:
+
+- `namespace`: Target environment (`production`, `staging`, `testing`) - default: `production`
+- `version`: Image version/tag (e.g., `v1.0.0`) - default: `latest`
+- `service`: Service name (`server`, `web`, `resume-agent`) - required for service workflows
+- `destroy_cluster`: Destroy Kind cluster (infra-destroy only) - default: `false`
+
+### Running Workflows in GitHub Actions
+
+**Prerequisites:**
+
+- Remote Kind cluster must be running (set up via `make infra-apply` or manually)
+- `KUBECONFIG` secret must be configured in repository settings
+
+**Trigger workflows:**
+
+1. Go to **Actions** tab
+2. Select the workflow
+3. Click **Run workflow**
+4. Fill in inputs (namespace, version, service, etc.)
+5. Click **Run workflow**
+
+Workflows will:
+
+- Connect to remote cluster using `KUBECONFIG` secret
+- Port-forward registry service for image pushes
+- Build and push images to registry
+- Deploy services using registry images
 
 ## Commands (Makefile)
 
 Alternative to GitHub Actions workflows, you can use Makefile commands directly:
-
-### Initialization
 
 ### Initialization
 
@@ -182,10 +360,12 @@ make infra-destroy   # Destroy infrastructure
 ### Build & Deploy
 
 ```bash
-make build-all       # Build all service images
-make load-all        # Load images into Kind cluster
-make deploy-all      # Deploy all services
+make build-all       # Build all service images (local only, doesn't push to registry)
+make load-all        # Load images into Kind cluster (legacy - use registry instead)
+make deploy-all      # Deploy all services (uses registry images)
 ```
+
+**Note:** For CI/CD workflows, images are automatically pushed to the Docker registry. The `load-all` command is for local development only. For production, use the registry workflow.
 
 ### Full Workflow
 
@@ -231,11 +411,55 @@ kind create cluster --name devops-demo
 ### Images Not Found
 
 ```bash
-# For Kind: Ensure images are loaded
+# Check registry is running
+kubectl get pods -n docker-registry
+
+# Check if images exist in registry
+kubectl port-forward -n docker-registry svc/docker-registry-nodeport 5000:5000 &
+curl http://localhost:5000/v2/_catalog
+
+# Verify deployment image references
+kubectl get deployment -n production -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.containers[0].image}{"\n"}{end}'
+
+# For local development: Load images directly (legacy method)
 make load-all
 
-# For cloud: Ensure images are pushed to registry
-# Check image pull policy in infra/modules/app/main.tf
+# For CI/CD: Ensure workflows pushed images to registry
+# Check workflow logs for "Pushed ... to registry" messages
+```
+
+### Registry Connection Issues
+
+```bash
+# Check registry pod status
+kubectl get pods -n docker-registry
+
+# View registry logs
+kubectl logs -n docker-registry -l app=docker-registry
+
+# Test registry connectivity
+kubectl port-forward -n docker-registry svc/docker-registry-nodeport 5000:5000 &
+curl http://localhost:5000/v2/
+
+# Verify registry service
+kubectl get svc -n docker-registry
+```
+
+### KUBECONFIG Not Configured
+
+If workflows fail with "No nodes found in cluster":
+
+```bash
+# Export kubeconfig from remote cluster
+kind export kubeconfig --name devops-demo > kubeconfig.yaml
+
+# Add to GitHub secrets:
+# Settings → Secrets → Actions → New secret
+# Name: KUBECONFIG
+# Value: (paste entire kubeconfig.yaml contents)
+
+# For local testing with act:
+echo "KUBECONFIG=$(cat kubeconfig.yaml | base64)" >> .secrets
 ```
 
 ### Ingress Not Working
@@ -321,11 +545,53 @@ make clean
 make infra-destroy
 ```
 
+## Docker Registry Details
+
+### Registry Configuration
+
+The Docker registry is automatically deployed as part of the infrastructure:
+
+- **Namespace**: `docker-registry`
+- **Storage**: 10Gi persistent volume
+- **Access**:
+  - Cluster-internal: `docker-registry.docker-registry.svc.cluster.local:5000`
+  - External (NodePort): Port 30500 → 5000
+  - CI/CD: Port-forwarded to `localhost:5000`
+
+### Image Naming Convention
+
+Images in the registry follow this pattern:
+
+```
+{registry_url}/{service}:{version}
+```
+
+Examples:
+
+- `docker-registry.docker-registry.svc.cluster.local:5000/server:latest`
+- `docker-registry.docker-registry.svc.cluster.local:5000/web:v1.0.0`
+- `docker-registry.docker-registry.svc.cluster.local:5000/resume-agent:latest`
+
+### Registry Management
+
+```bash
+# List images in registry
+kubectl port-forward -n docker-registry svc/docker-registry-nodeport 5000:5000 &
+curl http://localhost:5000/v2/_catalog
+
+# List tags for a specific image
+curl http://localhost:5000/v2/{image}/tags/list
+
+# Delete registry (will remove all images)
+kubectl delete namespace docker-registry
+```
+
 ## Next Steps
 
 - See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture and design decisions
 - Check `.github/workflows/` for CI/CD workflow details
 - Review `infra/envs/production/terraform.tfvars.example` for configuration options
+- Review `infra/modules/docker-registry/` for registry configuration
 
 ## Sources
 

@@ -23,7 +23,7 @@ env:
   NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
 
 jobs:
-  deploy:
+  deploy-service:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +32,13 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: "v1.29.2"
+
+      - name: Configure kubectl for remote cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context kind-devops-demo || kubectl config current-context
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -63,39 +70,74 @@ jobs:
             fi
           fi
 
-      - name: Build and load image
+      - name: Wait for registry to be ready
         run: |
+          echo "Waiting for Docker registry to be ready..."
+          kubectl wait --namespace docker-registry \
+            --for=condition=ready pod \
+            --selector=app=docker-registry \
+            --timeout=120s || echo "Warning: Registry may not be ready yet"
+
+      - name: Build and push image to registry
+        run: |
+          # Start port-forward in background
+          kubectl port-forward --namespace docker-registry svc/docker-registry-nodeport 5000:5000 > /dev/null 2>&1 &
+          PORT_FORWARD_PID=$!
+          sleep 3
+
+          REGISTRY="localhost:5000"
+
+          # Test registry connection
+          if ! curl -f http://${REGISTRY}/v2/ > /dev/null 2>&1; then
+            echo "Warning: Could not connect to registry, retrying..."
+            sleep 2
+          fi
+
           case "${{ env.SERVICE }}" in
             resume-agent)
               cd python/resume-agent
               docker build -t resume-agent:${{ env.VERSION }} .
-              kind load docker-image resume-agent:${{ env.VERSION }} --name devops-demo || true
+              docker tag resume-agent:${{ env.VERSION }} ${REGISTRY}/resume-agent:${{ env.VERSION }}
+              docker push ${REGISTRY}/resume-agent:${{ env.VERSION }}
               ;;
             server)
               cd typescript
               docker build -t server:${{ env.VERSION }} -f apps/server/Dockerfile .
-              kind load docker-image server:${{ env.VERSION }} --name devops-demo || true
+              docker tag server:${{ env.VERSION }} ${REGISTRY}/server:${{ env.VERSION }}
+              docker push ${REGISTRY}/server:${{ env.VERSION }}
               ;;
             web)
               cd typescript
               docker build -t web:${{ env.VERSION }} -f apps/web/Dockerfile \
                 --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
-              kind load docker-image web:${{ env.VERSION }} --name devops-demo || true
+              docker tag web:${{ env.VERSION }} ${REGISTRY}/web:${{ env.VERSION }}
+              docker push ${REGISTRY}/web:${{ env.VERSION }}
               ;;
           esac
 
-      - name: Terraform Init
-        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+          echo "✅ Pushed ${{ env.SERVICE }}:${{ env.VERSION }} to registry"
 
-      - name: Deploy migration job (server only)
+          # Cleanup port-forward
+          kill $PORT_FORWARD_PID 2>/dev/null || true
+
+      - name: Terraform Init
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform init
+
+      - name: Build and push migration image (server only)
         if: env.SERVICE == 'server'
         run: |
+          REGISTRY="localhost:5000"
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
 
           # Build migration image
           docker build -t server-migration:${{ env.VERSION }} -f ../../typescript/apps/server/Dockerfile.migration ../../typescript
-          kind load docker-image server-migration:${{ env.VERSION }} --name devops-demo || true
+          docker tag server-migration:${{ env.VERSION }} ${REGISTRY}/server-migration:${{ env.VERSION }}
+          docker push ${REGISTRY}/server-migration:${{ env.VERSION }}
+          echo "✅ Pushed server-migration:${{ env.VERSION }} to registry"
 
           # Deploy migration job
           terraform apply -var-file=terraform.tfvars \

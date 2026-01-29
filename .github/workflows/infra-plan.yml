@@ -12,7 +12,7 @@ env:
   NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
 
 jobs:
-  plan:
+  infra-plan:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,13 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: "v1.29.2"
+
+      - name: Configure kubectl for remote cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context kind-devops-demo || kubectl config current-context
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -37,7 +44,13 @@ jobs:
           fi
 
       - name: Terraform Init
-        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform init
 
       - name: Terraform Plan
-        run: make infra-plan NAMESPACE=${{ env.NAMESPACE }}
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform plan -var-file=terraform.tfvars

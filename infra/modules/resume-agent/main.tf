@@ -3,7 +3,7 @@ module "app" {
 
   name      = "resume-agent"
   namespace = var.namespace
-  image     = "resume-agent:${var.image_version}"
+  image     = var.registry_url != "" ? "${var.registry_url}/resume-agent:${var.image_version}" : "resume-agent:${var.image_version}"
   port      = 8000
   replicas  = var.replicas
 

@@ -7,10 +7,12 @@ module "server" {
   database_url  = module.postgresql.connection_string
   cors_origin   = "https://${var.ingress_host}"
   ingress_host  = var.ingress_host
+  registry_url  = var.registry_url != "" ? var.registry_url : module.docker_registry.registry_url
 
   depends_on = [
     module.namespace,
     module.server_migration,
-    module.postgresql
+    module.postgresql,
+    module.docker_registry
   ]
 }

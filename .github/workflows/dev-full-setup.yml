@@ -12,7 +12,7 @@ env:
   NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
 
 jobs:
-  setup:
+  dev-full-setup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,13 @@ jobs:
         uses: azure/setup-kubectl@v4
         with:
           version: "v1.29.2"
+
+      - name: Configure kubectl for remote cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context kind-devops-demo || kubectl config current-context
 
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -61,7 +68,10 @@ jobs:
           fi
 
       - name: Terraform Init
-        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform init
 
       - name: Initialize Infrastructure
         run: |
@@ -73,6 +83,11 @@ jobs:
             -target=kind_cluster.this \
             -auto-approve || true
 
+          # Deploy registry first (needed for image pushes)
+          terraform apply -var-file=terraform.tfvars \
+            -target=module.docker_registry \
+            -auto-approve
+
           # Deploy base infrastructure (namespaces, database, observability)
           terraform apply -var-file=terraform.tfvars \
             -target=module.namespace \
@@ -81,26 +96,56 @@ jobs:
             -target=null_resource.wait_for_ingress \
             -auto-approve
 
-      - name: Build all service images
+      - name: Wait for registry to be ready
         run: |
-          # Build resume-agent
+          echo "Waiting for Docker registry to be ready..."
+          kubectl wait --namespace docker-registry \
+            --for=condition=ready pod \
+            --selector=app=docker-registry \
+            --timeout=120s || echo "Warning: Registry may not be ready yet"
+
+      - name: Build and push images to registry
+        run: |
+          # Start port-forward in background
+          kubectl port-forward --namespace docker-registry svc/docker-registry-nodeport 5000:5000 > /dev/null 2>&1 &
+          PORT_FORWARD_PID=$!
+          sleep 3
+
+          REGISTRY="localhost:5000"
+
+          # Test registry connection
+          if ! curl -f http://${REGISTRY}/v2/ > /dev/null 2>&1; then
+            echo "Warning: Could not connect to registry, retrying..."
+            sleep 2
+          fi
+
+          # Build and tag resume-agent
           cd python/resume-agent
           docker build -t resume-agent:latest .
-          kind load docker-image resume-agent:latest --name devops-demo || true
+          docker tag resume-agent:latest ${REGISTRY}/resume-agent:latest
+          docker push ${REGISTRY}/resume-agent:latest
 
-          # Build server
+          # Build and tag server
           cd ../../typescript
           docker build -t server:latest -f apps/server/Dockerfile .
-          kind load docker-image server:latest --name devops-demo || true
+          docker tag server:latest ${REGISTRY}/server:latest
+          docker push ${REGISTRY}/server:latest
 
-          # Build migration
+          # Build and tag migration
           docker build -t server-migration:latest -f apps/server/Dockerfile.migration .
-          kind load docker-image server-migration:latest --name devops-demo || true
+          docker tag server-migration:latest ${REGISTRY}/server-migration:latest
+          docker push ${REGISTRY}/server-migration:latest
 
-          # Build web
+          # Build and tag web
           docker build -t web:latest -f apps/web/Dockerfile \
             --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
-          kind load docker-image web:latest --name devops-demo || true
+          docker tag web:latest ${REGISTRY}/web:latest
+          docker push ${REGISTRY}/web:latest
+
+          echo "✅ Pushed all images to registry"
+
+          # Cleanup port-forward
+          kill $PORT_FORWARD_PID 2>/dev/null || true
 
       - name: Deploy all services
         run: |

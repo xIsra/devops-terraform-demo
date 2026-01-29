@@ -17,13 +17,33 @@ env:
   VERSION: ${{ github.event.inputs.version || 'latest' }}
 
 jobs:
-  build:
+  build-service:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - name: Configure kubectl for remote cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context kind-devops-demo || kubectl config current-context
+
+      - name: Wait for registry to be ready
+        run: |
+          echo "Waiting for Docker registry to be ready..."
+          kubectl wait --namespace docker-registry \
+            --for=condition=ready pod \
+            --selector=app=docker-registry \
+            --timeout=120s || echo "Warning: Registry may not be ready yet"
 
       - name: Build resume-agent
         if: env.SERVICE == 'resume-agent'
@@ -53,26 +73,41 @@ jobs:
             --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
           echo "Built web:${{ env.VERSION }}"
 
-      - name: Load image into Kind cluster
+      - name: Push image to registry
         run: |
-          CLUSTER_NAME=${CLUSTER_NAME:-devops-demo}
-          if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-            case "${{ env.SERVICE }}" in
-              resume-agent)
-                kind load docker-image resume-agent:${{ env.VERSION }} --name ${CLUSTER_NAME}
-                ;;
-              server)
-                kind load docker-image server:${{ env.VERSION }} --name ${CLUSTER_NAME}
-                ;;
-              migration)
-                kind load docker-image server-migration:${{ env.VERSION }} --name ${CLUSTER_NAME}
-                ;;
-              web)
-                kind load docker-image web:${{ env.VERSION }} --name ${CLUSTER_NAME}
-                ;;
-            esac
-            echo "✅ Loaded ${{ env.SERVICE }}:${{ env.VERSION }} into Kind cluster"
-          else
-            echo "⚠️  Kind cluster ${CLUSTER_NAME} not found. Image built but not loaded."
-            echo "Run 'act -j infra-init' to create the cluster first."
+          # Start port-forward in background
+          kubectl port-forward --namespace docker-registry svc/docker-registry-nodeport 5000:5000 > /dev/null 2>&1 &
+          PORT_FORWARD_PID=$!
+          sleep 3
+
+          REGISTRY="localhost:5000"
+
+          # Test registry connection
+          if ! curl -f http://${REGISTRY}/v2/ > /dev/null 2>&1; then
+            echo "Warning: Could not connect to registry, retrying..."
+            sleep 2
           fi
+
+          case "${{ env.SERVICE }}" in
+            resume-agent)
+              docker tag resume-agent:${{ env.VERSION }} ${REGISTRY}/resume-agent:${{ env.VERSION }}
+              docker push ${REGISTRY}/resume-agent:${{ env.VERSION }}
+              ;;
+            server)
+              docker tag server:${{ env.VERSION }} ${REGISTRY}/server:${{ env.VERSION }}
+              docker push ${REGISTRY}/server:${{ env.VERSION }}
+              ;;
+            migration)
+              docker tag server-migration:${{ env.VERSION }} ${REGISTRY}/server-migration:${{ env.VERSION }}
+              docker push ${REGISTRY}/server-migration:${{ env.VERSION }}
+              ;;
+            web)
+              docker tag web:${{ env.VERSION }} ${REGISTRY}/web:${{ env.VERSION }}
+              docker push ${REGISTRY}/web:${{ env.VERSION }}
+              ;;
+          esac
+
+          echo "✅ Pushed ${{ env.SERVICE }}:${{ env.VERSION }} to registry"
+
+          # Cleanup port-forward
+          kill $PORT_FORWARD_PID 2>/dev/null || true

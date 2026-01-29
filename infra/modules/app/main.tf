@@ -64,7 +64,7 @@ resource "kubernetes_deployment" "this" {
         container {
           name              = var.name
           image             = var.image
-          image_pull_policy = "IfNotPresent" # Use IfNotPresent to pull new images when tag changes
+          image_pull_policy = "IfNotPresent" # Pull from registry when needed
 
           port {
             container_port = var.port

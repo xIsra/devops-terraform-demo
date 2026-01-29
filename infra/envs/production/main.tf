@@ -54,14 +54,29 @@ resource "kind_cluster" "this" {
         host_port      = 30080
         protocol       = "TCP"
       }
+      # Docker registry NodePort mapping
+      extra_port_mappings {
+        container_port = 30500
+        host_port      = 5000
+        protocol       = "TCP"
+      }
 
       # Required labels for ingress controller to work with Kind
+      # Configure insecure registry for localhost:5000
       kubeadm_config_patches = [
         <<-EOT
         kind: InitConfiguration
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
+        ---
+        kind: ClusterConfiguration
+        containerdConfigPatches:
+        - |-
+          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
+            endpoint = ["http://localhost:5000"]
+          [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:5000".tls]
+            insecure_skip_verify = true
         EOT
       ]
     }

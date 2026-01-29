@@ -7,8 +7,10 @@ module "resume_agent" {
   openai_api_key = var.openai_api_key
   openai_model   = var.openai_model
   ingress_host   = var.ingress_host
+  registry_url   = var.registry_url != "" ? var.registry_url : module.docker_registry.registry_url
 
   depends_on = [
-    module.namespace
+    module.namespace,
+    module.docker_registry
   ]
 }

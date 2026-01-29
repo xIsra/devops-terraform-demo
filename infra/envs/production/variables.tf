@@ -128,3 +128,12 @@ variable "ingress_host" {
   type        = string
   default     = "devops-demo.local"
 }
+
+# -----------------------------------------------------------------------------
+# Docker Registry Configuration
+# -----------------------------------------------------------------------------
+variable "registry_url" {
+  description = "Docker registry URL for container images (default: local registry in cluster)"
+  type        = string
+  default     = "" # Will be set to module output if not provided
+}

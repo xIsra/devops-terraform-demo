@@ -13,3 +13,9 @@ variable "database_url" {
   type        = string
   sensitive   = true
 }
+
+variable "registry_url" {
+  description = "Docker registry URL (e.g., localhost:5000 or docker-registry.docker-registry.svc.cluster.local:5000)"
+  type        = string
+  default     = ""
+}
