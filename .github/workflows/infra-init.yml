@@ -22,13 +22,6 @@ jobs:
         with:
           version: "v1.29.2"
 
-      - name: Configure kubectl for remote cluster
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-          chmod 600 ~/.kube/config
-          kubectl config use-context kind-devops-demo || kubectl config current-context
-
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.7.0"
@@ -70,25 +63,115 @@ jobs:
           cd "$ENV_DIR"
           terraform init
 
+      - name: Check if Kind cluster exists
+        id: check_cluster
+        run: |
+          # Try to configure kubectl if KUBECONFIG secret exists
+          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
+            mkdir -p ~/.kube
+            echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+            chmod 600 ~/.kube/config
+            kubectl config use-context kind-devops-demo || kubectl config current-context || true
+            
+            # Check if cluster is accessible
+            if kubectl cluster-info &>/dev/null 2>&1; then
+              echo "Cluster exists and is accessible"
+              echo "exists=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          fi
+
+          # If we get here, cluster doesn't exist or isn't accessible
+          echo "Cluster does not exist or is not accessible"
+          echo "exists=false" >> $GITHUB_OUTPUT
+
+      - name: Install Kind (if needed for cluster creation)
+        if: steps.check_cluster.outputs.exists == 'false'
+        run: |
+          if ! command -v kind &>/dev/null; then
+            echo "Installing Kind..."
+            curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+            chmod +x ./kind
+            sudo mv ./kind /usr/local/bin/kind
+          fi
+
+      - name: Create Kind cluster if needed
+        if: steps.check_cluster.outputs.exists == 'false'
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+
+          CLUSTER_NAME=$(grep '^cluster_name' terraform.tfvars | cut -d'"' -f2 || echo "devops-demo")
+
+          # Check if cluster exists via kind command (in case Terraform state is out of sync)
+          if command -v kind &>/dev/null; then
+            if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+              echo "Cluster ${CLUSTER_NAME} already exists via kind, importing into Terraform state..."
+              # Export kubeconfig first
+              kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
+              # Try to import or refresh state
+              terraform refresh -var-file=terraform.tfvars || true
+            else
+              echo "Creating Kind cluster..."
+              terraform apply -var-file=terraform.tfvars \
+                -target=kind_cluster.this \
+                -auto-approve || {
+                  # If creation fails because cluster exists, try to import it
+                  if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+                    echo "Cluster exists but Terraform failed, refreshing state..."
+                    kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
+                    terraform refresh -var-file=terraform.tfvars || true
+                  else
+                    exit 1
+                  fi
+                }
+            fi
+          else
+            echo "Creating Kind cluster via Terraform..."
+            terraform apply -var-file=terraform.tfvars \
+              -target=kind_cluster.this \
+              -auto-approve
+          fi
+
+          echo "Waiting for cluster to be ready..."
+          sleep 15
+
+          # Export kubeconfig from cluster
+          if command -v kind &>/dev/null; then
+            kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
+          fi
+
+          # Also try to get kubeconfig from Terraform output if available
+          terraform output -raw kubeconfig > ~/.kube/config 2>/dev/null || true
+
+      - name: Configure kubectl for cluster
+        run: |
+          # If KUBECONFIG secret exists, use it; otherwise use local kubeconfig from kind
+          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
+            mkdir -p ~/.kube
+            echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+            chmod 600 ~/.kube/config
+            kubectl config use-context kind-devops-demo || kubectl config current-context || true
+          fi
+
+          # Verify cluster is accessible
+          kubectl cluster-info || {
+            echo "Warning: Cluster may not be fully ready yet, continuing..."
+          }
+
       - name: Initialize Infrastructure
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
 
-          # Ensure cluster exists first
+          # Deploy image registry repositories first (needed for image pushes)
           terraform apply -var-file=terraform.tfvars \
-            -target=kind_cluster.this \
-            -auto-approve || true
-
-          # Deploy registry first (needed for image pushes)
-          terraform apply -var-file=terraform.tfvars \
-            -target=module.docker_registry \
+            -target=module.image_registry \
             -auto-approve
 
-          # Deploy base infrastructure (namespaces, database, observability)
+          # Deploy base infrastructure (namespaces, database, ingress)
           terraform apply -var-file=terraform.tfvars \
             -target=module.namespace \
             -target=module.postgresql \
-            -target=module.observability \
             -target=null_resource.wait_for_ingress \
             -auto-approve

@@ -1,25 +1,27 @@
 # -----------------------------------------------------------------------------
-# Docker Registry
-# Local registry for container images
+# Image Registry
+# Creates Docker registry for container images
+# Note: Docker registry must be running separately (see README)
 # -----------------------------------------------------------------------------
 
-module "docker_registry" {
-  source = "../../modules/docker-registry"
+module "image_registry" {
+  source = "../../modules/image-registry"
 
-  storage_size = "10Gi"
+  registry_endpoint = var.registry_endpoint
+  repository_prefix = "${var.cluster_name}-${var.environment}"
 }
 
 output "registry_url" {
-  description = "Registry URL for cluster-internal access"
-  value       = module.docker_registry.registry_url
+  description = "Docker registry URL (for host access, e.g., localhost:5555)"
+  value       = var.registry_endpoint
 }
 
-output "registry_host" {
-  description = "Registry hostname for cluster-internal access"
-  value       = module.docker_registry.registry_host
+output "cluster_registry_url" {
+  description = "Docker registry URL (for cluster access, e.g., host.docker.internal:5555)"
+  value       = module.image_registry.registry_url
 }
 
-output "registry_nodeport" {
-  description = "Registry NodePort for external access"
-  value       = module.docker_registry.nodeport
+output "registry_repositories" {
+  description = "All repository URLs"
+  value       = module.image_registry.all_repositories
 }

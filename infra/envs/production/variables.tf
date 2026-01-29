@@ -132,8 +132,14 @@ variable "ingress_host" {
 # -----------------------------------------------------------------------------
 # Docker Registry Configuration
 # -----------------------------------------------------------------------------
+variable "registry_endpoint" {
+  description = "Docker registry endpoint (host:port)"
+  type        = string
+  default     = "localhost:5555"
+}
+
 variable "registry_url" {
-  description = "Docker registry URL for container images (default: local registry in cluster)"
+  description = "Docker registry URL for container images (default: localhost:5555)"
   type        = string
   default     = "" # Will be set to module output if not provided
 }

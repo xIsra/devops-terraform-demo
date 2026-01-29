@@ -6,11 +6,11 @@ module "server_migration" {
   namespace     = var.environment
   image_version = var.server_version
   database_url  = module.postgresql.connection_string
-  registry_url  = var.registry_url != "" ? var.registry_url : module.docker_registry.registry_url
+  registry_url  = var.registry_url != "" ? var.registry_url : module.image_registry.server_migration_repository_url
 
   depends_on = [
     module.namespace,
     module.postgresql,
-    module.docker_registry
+    module.image_registry
   ]
 }

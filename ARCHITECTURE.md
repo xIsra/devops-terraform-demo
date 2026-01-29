@@ -1,6 +1,6 @@
 # Architecture & Design
 
-Production-ready Infrastructure as Code (IaC) solution for deploying microservices to Kubernetes with centralized Terraform modules, observability stack, and CI/CD workflows.
+Production-ready Infrastructure as Code (IaC) solution for deploying microservices to Kubernetes with centralized Terraform modules and CI/CD workflows.
 
 ## Architecture Overview
 
@@ -28,13 +28,6 @@ Production-ready Infrastructure as Code (IaC) solution for deploying microservic
 │                        │  PostgreSQL      │                         │
 │                        │  (StatefulSet)   │                         │
 │                        └──────────────────┘                         │
-│                                                                       │
-│  ┌───────────────────────────────────────────────────────────────┐  │
-│  │              Observability Stack (monitoring namespace)        │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐     │  │
-│  │  │Prometheus│  │ Grafana  │  │   Loki   │  │ OpenTele │     │  │
-│  │  └──────────┘  └──────────┘  └──────────┘  └──────────┘     │  │
-│  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,7 +36,6 @@ Production-ready Infrastructure as Code (IaC) solution for deploying microservic
 - **Centralized K8s Definitions**: All Kubernetes resources defined in Terraform using reusable modules
 - **Multi-Environment Support**: Deploy to `production`, `staging`, or `testing` namespaces
 - **Service Autonomy**: Each service owns its build process, Terraform handles deployments
-- **Full Observability**: Prometheus metrics, Grafana dashboards, Loki logs, OpenTelemetry traces
 - **Managed Database**: PostgreSQL StatefulSet simulating cloud-managed database
 - **CI/CD Workflows**: Separate workflows for builds (auto), deploys (manual), and infrastructure
 - **Cluster Agnostic**: Works with any Kubernetes cluster (Kind, EKS, GKE, AKS, etc.)
@@ -63,7 +55,6 @@ asaph-devops-test/
 │   │   ├── queue/                    # Queue module (placeholder)
 │   │   ├── namespace/                # Namespace module
 │   │   ├── postgresql/               # PostgreSQL module
-│   │   └── observability/            # Observability module
 │   ├── envs/                         # Environment-specific configs
 │   │   └── production/               # Production environment
 │   │       ├── main.tf                # Root module
@@ -74,7 +65,6 @@ asaph-devops-test/
 │   │       ├── namespaces.tf          # Environment namespaces
 │   │       ├── ingress.tf            # Caddy ingress controller
 │   │       ├── database.tf            # PostgreSQL
-│   │       ├── observability.tf       # Monitoring stack
 │   │       ├── web.tf                 # Web service
 │   │       ├── server.tf              # Server service
 │   │       ├── server-migration.tf    # Migration job

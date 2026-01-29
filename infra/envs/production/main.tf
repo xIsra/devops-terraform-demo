@@ -32,6 +32,16 @@ resource "kind_cluster" "this" {
     kind        = "Cluster"
     api_version = "kind.x-k8s.io/v1alpha4"
 
+    # Configure containerd to allow insecure registry access for all nodes
+    containerd_config_patches = [
+      <<-EOT
+      [plugins."io.containerd.grpc.v1.cri".registry.mirrors."host.docker.internal:5555"]
+        endpoint = ["http://host.docker.internal:5555"]
+      [plugins."io.containerd.grpc.v1.cri".registry.configs."host.docker.internal:5555".tls]
+        insecure_skip_verify = true
+      EOT
+    ]
+
     node {
       role  = "control-plane"
       image = "kindest/node:${var.kubernetes_version}"
@@ -48,35 +58,13 @@ resource "kind_cluster" "this" {
         host_port      = 443
         protocol       = "TCP"
       }
-      # Grafana NodePort mapping
-      extra_port_mappings {
-        container_port = 30080
-        host_port      = 30080
-        protocol       = "TCP"
-      }
-      # Docker registry NodePort mapping
-      extra_port_mappings {
-        container_port = 30500
-        host_port      = 5000
-        protocol       = "TCP"
-      }
-
       # Required labels for ingress controller to work with Kind
-      # Configure insecure registry for localhost:5000
       kubeadm_config_patches = [
         <<-EOT
         kind: InitConfiguration
         nodeRegistration:
           kubeletExtraArgs:
             node-labels: "ingress-ready=true"
-        ---
-        kind: ClusterConfiguration
-        containerdConfigPatches:
-        - |-
-          [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5000"]
-            endpoint = ["http://localhost:5000"]
-          [plugins."io.containerd.grpc.v1.cri".registry.configs."localhost:5000".tls]
-            insecure_skip_verify = true
         EOT
       ]
     }
@@ -101,7 +89,6 @@ resource "kind_cluster" "this" {
 # - namespaces.tf (Environment namespace)
 # - ingress.tf (Nginx ingress controller)
 # - database.tf (PostgreSQL)
-# - observability.tf (Prometheus, Grafana, Loki, OTEL)
 #
 # Services are defined in:
 # - resume-agent.tf

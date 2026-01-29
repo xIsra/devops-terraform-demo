@@ -67,7 +67,7 @@ resource "kubernetes_job" "this" {
 
         container {
           name              = "migration"
-          image             = var.registry_url != "" ? "${var.registry_url}/server-migration:${var.image_version}" : "server-migration:${var.image_version}"
+          image             = var.registry_url != "" ? "${var.registry_url}:${var.image_version}" : "server-migration:${var.image_version}"
           image_pull_policy = var.registry_url != "" ? "IfNotPresent" : "Never" # Use IfNotPresent for registry, Never for local Kind images
 
           # The migration image should have an entrypoint that runs: pnpm --filter @typescript/db db:push

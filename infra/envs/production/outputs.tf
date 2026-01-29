@@ -56,9 +56,6 @@ output "usage_instructions" {
     Make sure to add ${var.ingress_host} to /etc/hosts:
     $ echo "127.0.0.1 ${var.ingress_host}" | sudo tee -a /etc/hosts
     
-    Observability:
-    • Grafana: http://localhost:30080 (admin/admin)
-    
     To check cluster status:
     $ kubectl get pods -n ${var.environment}
     $ kubectl get ingress -n ${var.environment}

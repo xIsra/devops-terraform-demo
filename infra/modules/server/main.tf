@@ -3,7 +3,7 @@ module "app" {
 
   name      = "server"
   namespace = var.namespace
-  image     = var.registry_url != "" ? "${var.registry_url}/server:${var.image_version}" : "server:${var.image_version}"
+  image     = var.registry_url != "" ? "${var.registry_url}:${var.image_version}" : "server:${var.image_version}"
   port      = 3000
   replicas  = var.replicas
 
