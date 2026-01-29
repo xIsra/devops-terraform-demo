@@ -1,0 +1,58 @@
+name: Dev Build All
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version/tag (applies to all services)"
+        type: string
+        default: "latest"
+
+env:
+  VERSION: ${{ github.event.inputs.version || 'latest' }}
+
+jobs:
+  build-all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build resume-agent
+        run: |
+          cd python/resume-agent
+          docker build -t resume-agent:${{ env.VERSION }} .
+          echo "✅ Built resume-agent:${{ env.VERSION }}"
+
+      - name: Build server
+        run: |
+          cd typescript
+          docker build -t server:${{ env.VERSION }} -f apps/server/Dockerfile .
+          echo "✅ Built server:${{ env.VERSION }}"
+
+      - name: Build migration
+        run: |
+          docker build -t server-migration:${{ env.VERSION }} -f typescript/apps/server/Dockerfile.migration typescript
+          echo "✅ Built server-migration:${{ env.VERSION }}"
+
+      - name: Build web
+        run: |
+          cd typescript
+          docker build -t web:${{ env.VERSION }} -f apps/web/Dockerfile \
+            --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
+          echo "✅ Built web:${{ env.VERSION }}"
+
+      - name: Load images into Kind cluster
+        run: |
+          CLUSTER_NAME=${CLUSTER_NAME:-devops-demo}
+          if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+            kind load docker-image resume-agent:${{ env.VERSION }} --name ${CLUSTER_NAME}
+            kind load docker-image server:${{ env.VERSION }} --name ${CLUSTER_NAME}
+            kind load docker-image server-migration:${{ env.VERSION }} --name ${CLUSTER_NAME}
+            kind load docker-image web:${{ env.VERSION }} --name ${CLUSTER_NAME}
+            echo "✅ Loaded all images into Kind cluster"
+          else
+            echo "⚠️  Kind cluster ${CLUSTER_NAME} not found. Images built but not loaded."
+            echo "Run 'act -j infra-init' to create the cluster first."
+          fi

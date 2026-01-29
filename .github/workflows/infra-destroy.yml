@@ -1,0 +1,58 @@
+name: Infrastructure Destroy
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Target namespace/environment"
+        type: choice
+        options: [production, staging, testing]
+        default: production
+      destroy_cluster:
+        description: "Destroy the Kind cluster (default: false)"
+        type: boolean
+        default: false
+
+env:
+  NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Check terraform.tfvars exists
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          if [ ! -f "$ENV_DIR/terraform.tfvars" ]; then
+            echo "Error: terraform.tfvars not found in $ENV_DIR"
+            echo "Copy terraform.tfvars.example to terraform.tfvars and configure it"
+            exit 1
+          fi
+
+      - name: Terraform Init
+        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Terraform Destroy
+        run: make infra-destroy NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Destroy Kind Cluster
+        if: github.event.inputs.destroy_cluster == 'true'
+        run: |
+          CLUSTER_NAME=$(grep '^cluster_name' infra/envs/${{ env.NAMESPACE }}/terraform.tfvars | cut -d'"' -f2 || echo "devops-demo")
+          if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+            echo "Destroying Kind cluster: ${CLUSTER_NAME}"
+            kind delete cluster --name "${CLUSTER_NAME}"
+          else
+            echo "Cluster ${CLUSTER_NAME} not found, skipping deletion"
+          fi

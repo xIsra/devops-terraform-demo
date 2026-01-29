@@ -8,11 +8,12 @@ Quick start guide for deploying microservices to Kubernetes. See [ARCHITECTURE.m
 - [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) (configured for your cluster)
 - [Kind](https://kind.sigs.k8s.io/) (for local development) or any Kubernetes cluster (EKS, GKE, AKS, etc.)
+- [Act](https://github.com/nektos/act) (for running GitHub Actions locally)
 
 ### Quick Install (macOS)
 
 ```bash
-brew install terraform kubectl kind
+brew install terraform kubectl kind act
 ```
 
 ### Quick Install (Linux)
@@ -31,50 +32,71 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
+
+# Act
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
-## Quick Start
+## Quick Start with Act
 
-### 1. Initialize Environment
+### 1. Install Act
+
+**macOS:**
 
 ```bash
-# This will:
-# - Check required tools are installed
-# - Verify Docker is running
-# - Add devops-demo.local to /etc/hosts
-# - Create terraform.tfvars from example if missing
-make init
+brew install act
 ```
 
-### 2. Configure Secrets
-
-Edit `infra/envs/production/terraform.tfvars` and set your secrets:
+**Linux:**
 
 ```bash
-# Required secrets:
-openai_api_key = "sk-your-key-here"
-db_username     = "postgres"
-db_password     = "postgres"
-db_name         = "postgres"
+curl -s https://raw.githubusercontent.com/nektos/act/master/install.sh | sudo bash
 ```
 
-### 3. Deploy Everything
+### 2. Create Secrets File
 
 ```bash
-# Full workflow: init → build → deploy → health checks
-make all
+cp .secrets.example .secrets
+# Edit .secrets with your OPENAI_API_KEY
+```
+
+### 3. Configure Terraform Variables
+
+Edit `infra/envs/production/terraform.tfvars` (or create from `terraform.tfvars.example`) and set your database credentials:
+
+```hcl
+db_username = "postgres"
+db_password = "postgres"
+db_name     = "postgres"
+```
+
+### 4. Full Setup (One Command)
+
+```bash
+act -j dev-full-setup --secret-file .secrets
 ```
 
 This will:
 
 - Initialize Terraform
+- Create Kind cluster
+- Deploy infrastructure (database, observability, ingress)
 - Build all service images
-- Load images into Kind cluster
-- Deploy infrastructure (cluster, ingress, database, observability)
 - Deploy all services
-- Run health checks
 
-### 4. Access Applications
+### 5. Deploy a Service
+
+Deploy a specific service with a version tag:
+
+```bash
+# Deploy server v1.0.0 to production
+act -j deploy-service --input service=server --input version=v1.0.0 --input namespace=production --secret-file .secrets
+
+# Deploy web to staging
+act -j deploy-service --input service=web --input version=v2.0.0 --input namespace=staging --secret-file .secrets
+```
+
+### 6. Access Applications
 
 | Service      | URL                                  | Description             |
 | ------------ | ------------------------------------ | ----------------------- |
@@ -84,7 +106,7 @@ This will:
 
 **Note**: Nginx Ingress provides routing for `.local` domains and can use self-signed certificates. Your browser may show a security warning - click "Advanced" and "Proceed" to accept the certificate.
 
-### 5. Access Observability
+### 7. Access Observability
 
 ```bash
 # Grafana dashboard
@@ -98,7 +120,49 @@ kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:909
 # Access Prometheus: http://localhost:9090
 ```
 
-## Commands
+## Available Workflows
+
+### Infrastructure Workflows
+
+```bash
+# Initialize cluster and base infrastructure
+act -j infra-init --input namespace=production --secret-file .secrets
+
+# Plan infrastructure changes
+act -j infra-plan --input namespace=production --secret-file .secrets
+
+# Apply infrastructure changes
+act -j infra-apply --input namespace=production --secret-file .secrets
+
+# Destroy infrastructure
+act -j infra-destroy --input namespace=production --secret-file .secrets
+```
+
+### Service Workflows
+
+```bash
+# Build a service image
+act -j build-service --input service=server --input version=v1.0.0
+
+# Deploy a service
+act -j deploy-service --input service=server --input version=v1.0.0 --input namespace=production --secret-file .secrets
+```
+
+### Dev Team Workflows
+
+```bash
+# Build all services
+act -j dev-build-all --input version=v1.0.0
+
+# Full local setup (init + infra + build + deploy)
+act -j dev-full-setup --input namespace=production --secret-file .secrets
+```
+
+## Commands (Makefile)
+
+Alternative to GitHub Actions workflows, you can use Makefile commands directly:
+
+### Initialization
 
 ### Initialization
 

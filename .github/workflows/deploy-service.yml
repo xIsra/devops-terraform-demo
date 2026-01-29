@@ -1,0 +1,179 @@
+name: Deploy Service
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy"
+        type: choice
+        options: [server, web, resume-agent]
+        required: true
+      version:
+        description: "Image version/tag (e.g., v1.0.0)"
+        type: string
+        default: "latest"
+      namespace:
+        description: "Target namespace/environment"
+        type: choice
+        options: [production, staging, testing]
+        default: production
+
+env:
+  SERVICE: ${{ github.event.inputs.service }}
+  VERSION: ${{ github.event.inputs.version || 'latest' }}
+  NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Check terraform.tfvars exists
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          if [ ! -f "$ENV_DIR/terraform.tfvars" ]; then
+            echo "Error: terraform.tfvars not found in $ENV_DIR"
+            echo "Copy terraform.tfvars.example to terraform.tfvars and configure it"
+            exit 1
+          fi
+
+      - name: Update terraform.tfvars with OpenAI API key
+        if: env.OPENAI_API_KEY != ''
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          # Update openai_api_key if secret is provided
+          if [ -n "$OPENAI_API_KEY" ]; then
+            if grep -q "^openai_api_key" "$ENV_DIR/terraform.tfvars"; then
+              sed -i.bak "s|^openai_api_key.*|openai_api_key = \"$OPENAI_API_KEY\"|" "$ENV_DIR/terraform.tfvars"
+              rm -f "$ENV_DIR/terraform.tfvars.bak"
+            else
+              echo "openai_api_key = \"$OPENAI_API_KEY\"" >> "$ENV_DIR/terraform.tfvars"
+            fi
+          fi
+
+      - name: Build and load image
+        run: |
+          case "${{ env.SERVICE }}" in
+            resume-agent)
+              cd python/resume-agent
+              docker build -t resume-agent:${{ env.VERSION }} .
+              kind load docker-image resume-agent:${{ env.VERSION }} --name devops-demo || true
+              ;;
+            server)
+              cd typescript
+              docker build -t server:${{ env.VERSION }} -f apps/server/Dockerfile .
+              kind load docker-image server:${{ env.VERSION }} --name devops-demo || true
+              ;;
+            web)
+              cd typescript
+              docker build -t web:${{ env.VERSION }} -f apps/web/Dockerfile \
+                --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
+              kind load docker-image web:${{ env.VERSION }} --name devops-demo || true
+              ;;
+          esac
+
+      - name: Terraform Init
+        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Deploy migration job (server only)
+        if: env.SERVICE == 'server'
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+
+          # Build migration image
+          docker build -t server-migration:${{ env.VERSION }} -f ../../typescript/apps/server/Dockerfile.migration ../../typescript
+          kind load docker-image server-migration:${{ env.VERSION }} --name devops-demo || true
+
+          # Deploy migration job
+          terraform apply -var-file=terraform.tfvars \
+            -var="server_version=${{ env.VERSION }}" \
+            -target=module.server_migration \
+            -auto-approve
+
+      - name: Wait for migration job to complete
+        if: env.SERVICE == 'server'
+        run: |
+          JOB_NAME="server-migration-$(echo ${{ env.VERSION }} | tr '.' '-')"
+          NAMESPACE="${{ env.NAMESPACE }}"
+
+          echo "Waiting for migration job $JOB_NAME to complete..."
+
+          # Wait for job to be created
+          timeout=60
+          elapsed=0
+          while ! kubectl get job "$JOB_NAME" -n "$NAMESPACE" &>/dev/null; do
+            if [ $elapsed -ge $timeout ]; then
+              echo "Timeout waiting for job to be created"
+              exit 1
+            fi
+            sleep 2
+            elapsed=$((elapsed + 2))
+          done
+
+          # Wait for job to complete (success or failure)
+          if kubectl wait --for=condition=complete --timeout=300s job/"$JOB_NAME" -n "$NAMESPACE"; then
+            echo "✅ Migration job completed successfully"
+          else
+            echo "❌ Migration job failed or timed out"
+            kubectl logs job/"$JOB_NAME" -n "$NAMESPACE" || true
+            kubectl describe job/"$JOB_NAME" -n "$NAMESPACE" || true
+            exit 1
+          fi
+
+      - name: Deploy resume-agent via Terraform
+        if: env.SERVICE == 'resume-agent'
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform apply -var-file=terraform.tfvars \
+            -var="resume_agent_version=${{ env.VERSION }}" \
+            -target=module.resume_agent \
+            -auto-approve
+
+      - name: Deploy server via Terraform
+        if: env.SERVICE == 'server'
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform apply -var-file=terraform.tfvars \
+            -var="server_version=${{ env.VERSION }}" \
+            -target=module.server \
+            -auto-approve
+
+      - name: Deploy web via Terraform
+        if: env.SERVICE == 'web'
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          cd "$ENV_DIR"
+          terraform apply -var-file=terraform.tfvars \
+            -var="web_version=${{ env.VERSION }}" \
+            -target=module.web \
+            -auto-approve
+
+      - name: Verify deployment
+        run: |
+          NAMESPACE="${{ env.NAMESPACE }}"
+          case "${{ env.SERVICE }}" in
+            resume-agent)
+              kubectl rollout status deployment/resume-agent -n "$NAMESPACE" --timeout=120s || true
+              ;;
+            server)
+              kubectl rollout status deployment/server -n "$NAMESPACE" --timeout=120s || true
+              ;;
+            web)
+              kubectl rollout status deployment/web -n "$NAMESPACE" --timeout=120s || true
+              ;;
+          esac

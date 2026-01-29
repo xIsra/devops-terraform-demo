@@ -50,3 +50,18 @@ REQUIREMENTS:
 - Have secrets management for the cluster (can be default but manageable)
 - Have logs management for the cluster. (opentelemetry, grafana, prometheus, loki, etc.)
 ```
+
+## Prompt: Align github actions to the project task requirements.
+
+```md
+GOAL:
+Let the whole team be able to use infra and deploy easily only through github actions
+
+TASK:
+Refactor github/workflows completely (removing current even) and create new that are more relevant. To allow developers to work with the cluster only with the use of github action through "act" locally. try not touching the infra/ folder too much this task is focusing on usability of github workflows actions.
+
+REQUIREMENTS / SUGGESTIONS:
+I want to have some workflows for infra and infra updates
+I want to have infra for dev teams working on projects
+I want to have build and deploy for services (argumen service) that will deploy a specific service to the cluster using terraform only (probably needs image version tag input (web:v1.0.0 instead of always latest)).
+```

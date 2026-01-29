@@ -1,0 +1,43 @@
+name: Infrastructure Plan
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: "Target namespace/environment"
+        type: choice
+        options: [production, staging, testing]
+        default: production
+
+env:
+  NAMESPACE: ${{ github.event.inputs.namespace || 'production' }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Check terraform.tfvars exists
+        run: |
+          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
+          if [ ! -f "$ENV_DIR/terraform.tfvars" ]; then
+            echo "Error: terraform.tfvars not found in $ENV_DIR"
+            echo "Copy terraform.tfvars.example to terraform.tfvars and configure it"
+            exit 1
+          fi
+
+      - name: Terraform Init
+        run: make infra-init NAMESPACE=${{ env.NAMESPACE }}
+
+      - name: Terraform Plan
+        run: make infra-plan NAMESPACE=${{ env.NAMESPACE }}
