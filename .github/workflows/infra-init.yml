@@ -47,7 +47,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
-          # Update openai_api_key if secret is provided
           if [ -n "$OPENAI_API_KEY" ]; then
             if grep -q "^openai_api_key" "$ENV_DIR/terraform.tfvars"; then
               sed -i.bak "s|^openai_api_key.*|openai_api_key = \"$OPENAI_API_KEY\"|" "$ENV_DIR/terraform.tfvars"
@@ -63,30 +62,7 @@ jobs:
           cd "$ENV_DIR"
           terraform init
 
-      - name: Check if Kind cluster exists
-        id: check_cluster
-        run: |
-          # Try to configure kubectl if KUBECONFIG secret exists
-          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
-            mkdir -p ~/.kube
-            echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-            chmod 600 ~/.kube/config
-            kubectl config use-context kind-devops-demo || kubectl config current-context || true
-            
-            # Check if cluster is accessible
-            if kubectl cluster-info &>/dev/null 2>&1; then
-              echo "Cluster exists and is accessible"
-              echo "exists=true" >> $GITHUB_OUTPUT
-              exit 0
-            fi
-          fi
-
-          # If we get here, cluster doesn't exist or isn't accessible
-          echo "Cluster does not exist or is not accessible"
-          echo "exists=false" >> $GITHUB_OUTPUT
-
-      - name: Install Kind (if needed for cluster creation)
-        if: steps.check_cluster.outputs.exists == 'false'
+      - name: Install Kind
         run: |
           if ! command -v kind &>/dev/null; then
             echo "Installing Kind..."
@@ -95,76 +71,59 @@ jobs:
             sudo mv ./kind /usr/local/bin/kind
           fi
 
-      - name: Create Kind cluster if needed
-        if: steps.check_cluster.outputs.exists == 'false'
+      - name: Create Kind cluster
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
 
           CLUSTER_NAME=$(grep '^cluster_name' terraform.tfvars | cut -d'"' -f2 || echo "devops-demo")
 
-          # Check if cluster exists via kind command (in case Terraform state is out of sync)
-          if command -v kind &>/dev/null; then
-            if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-              echo "Cluster ${CLUSTER_NAME} already exists via kind, importing into Terraform state..."
-              # Export kubeconfig first
-              kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
-              # Try to import or refresh state
-              terraform refresh -var-file=terraform.tfvars || true
-            else
-              echo "Creating Kind cluster..."
-              terraform apply -var-file=terraform.tfvars \
-                -target=kind_cluster.this \
-                -auto-approve || {
-                  # If creation fails because cluster exists, try to import it
-                  if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
-                    echo "Cluster exists but Terraform failed, refreshing state..."
-                    kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
-                    terraform refresh -var-file=terraform.tfvars || true
-                  else
-                    exit 1
-                  fi
-                }
-            fi
+          # Check if cluster exists
+          if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+            echo "Cluster ${CLUSTER_NAME} already exists"
+            kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
           else
-            echo "Creating Kind cluster via Terraform..."
+            echo "Creating Kind cluster..."
             terraform apply -var-file=terraform.tfvars \
               -target=kind_cluster.this \
-              -auto-approve
-          fi
-
-          echo "Waiting for cluster to be ready..."
-          sleep 15
-
-          # Export kubeconfig from cluster
-          if command -v kind &>/dev/null; then
+              -auto-approve || {
+              # Fallback: create cluster directly if Terraform fails
+              if ! kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+                echo "Creating cluster directly with kind..."
+                cat > /tmp/kind-config.yaml <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        node-labels: "ingress-ready=true"
+  extraPortMappings:
+  - containerPort: 80
+    hostPort: 80
+    protocol: TCP
+  - containerPort: 443
+    hostPort: 443
+    protocol: TCP
+- role: worker
+- role: worker
+EOF
+                kind create cluster --name ${CLUSTER_NAME} --config /tmp/kind-config.yaml
+                rm -f /tmp/kind-config.yaml
+              fi
+            }
             kind export kubeconfig --name ${CLUSTER_NAME} 2>/dev/null || true
           fi
 
-          # Also try to get kubeconfig from Terraform output if available
-          terraform output -raw kubeconfig > ~/.kube/config 2>/dev/null || true
-
-      - name: Configure kubectl for cluster
-        run: |
-          # If KUBECONFIG secret exists, use it; otherwise use local kubeconfig from kind
-          if [ -n "${{ secrets.KUBECONFIG }}" ]; then
-            mkdir -p ~/.kube
-            echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
-            chmod 600 ~/.kube/config
-            kubectl config use-context kind-devops-demo || kubectl config current-context || true
-          fi
-
-          # Verify cluster is accessible
-          kubectl cluster-info || {
-            echo "Warning: Cluster may not be fully ready yet, continuing..."
-          }
-
-      - name: Initialize Infrastructure
+      - name: Initialize base infrastructure
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
 
-          # Deploy image registry repositories first (needed for image pushes)
+          # Deploy image registry repositories first
           terraform apply -var-file=terraform.tfvars \
             -target=module.image_registry \
             -auto-approve

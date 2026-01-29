@@ -1,0 +1,89 @@
+name: Build Service
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to build"
+        type: choice
+        options: [server, web, resume-agent, migration]
+        required: true
+      version:
+        description: "Image version/tag"
+        type: string
+        default: "latest"
+
+env:
+  SERVICE: ${{ github.event.inputs.service }}
+  VERSION: ${{ github.event.inputs.version || 'latest' }}
+
+jobs:
+  build-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.2"
+
+      - name: Configure kubectl for remote cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+          kubectl config use-context kind-devops-demo || kubectl config current-context
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      - name: Get registry URL
+        id: registry
+        run: |
+          ENV_DIR="infra/envs/production"
+          cd "$ENV_DIR"
+          terraform init >/dev/null 2>&1 || true
+          REGISTRY_URL=$(terraform output -raw registry_url 2>/dev/null || echo "localhost:5555")
+          echo "url=${REGISTRY_URL}" >> $GITHUB_OUTPUT
+          echo "prefix=devops-demo-production" >> $GITHUB_OUTPUT
+
+      - name: Build resume-agent
+        if: env.SERVICE == 'resume-agent'
+        run: |
+          cd python/resume-agent
+          docker build -t resume-agent:${{ env.VERSION }} .
+          docker tag resume-agent:${{ env.VERSION }} ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/resume-agent:${{ env.VERSION }}
+          docker push ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/resume-agent:${{ env.VERSION }}
+          echo "✅ Built and pushed resume-agent:${{ env.VERSION }}"
+
+      - name: Build server
+        if: env.SERVICE == 'server'
+        run: |
+          cd typescript
+          docker build -t server:${{ env.VERSION }} -f apps/server/Dockerfile .
+          docker tag server:${{ env.VERSION }} ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/server:${{ env.VERSION }}
+          docker push ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/server:${{ env.VERSION }}
+          echo "✅ Built and pushed server:${{ env.VERSION }}"
+
+      - name: Build migration
+        if: env.SERVICE == 'migration'
+        run: |
+          docker build -t server-migration:${{ env.VERSION }} -f typescript/apps/server/Dockerfile.migration typescript
+          docker tag server-migration:${{ env.VERSION }} ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/server-migration:${{ env.VERSION }}
+          docker push ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/server-migration:${{ env.VERSION }}
+          echo "✅ Built and pushed server-migration:${{ env.VERSION }}"
+
+      - name: Build web
+        if: env.SERVICE == 'web'
+        run: |
+          cd typescript
+          docker build -t web:${{ env.VERSION }} -f apps/web/Dockerfile \
+            --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
+          docker tag web:${{ env.VERSION }} ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/web:${{ env.VERSION }}
+          docker push ${{ steps.registry.outputs.url }}/${{ steps.registry.outputs.prefix }}/web:${{ env.VERSION }}
+          echo "✅ Built and pushed web:${{ env.VERSION }}"

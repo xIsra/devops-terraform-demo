@@ -60,7 +60,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
-          # Update openai_api_key if secret is provided
           if [ -n "$OPENAI_API_KEY" ]; then
             if grep -q "^openai_api_key" "$ENV_DIR/terraform.tfvars"; then
               sed -i.bak "s|^openai_api_key.*|openai_api_key = \"$OPENAI_API_KEY\"|" "$ENV_DIR/terraform.tfvars"
@@ -70,112 +69,13 @@ jobs:
             fi
           fi
 
-      - name: Verify Docker registry is accessible
-        run: |
-          # Verify Docker registry is accessible
-          REGISTRY_URL="localhost:5555"
-          if ! curl -f http://${REGISTRY_URL}/v2/ >/dev/null 2>&1; then
-            echo "Error: Docker registry not accessible at http://${REGISTRY_URL}"
-            echo "Please ensure Docker registry is running: docker-compose -f docker-compose.registry.yml up -d"
-            exit 1
-          fi
-          echo "✅ Docker registry is accessible"
-
-      - name: Build and push image to image registry
-        run: |
-          # Get registry URL from Terraform output
-          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
-          cd "$ENV_DIR"
-          terraform init
-          REGISTRY_URL=$(terraform output -raw registry_url || echo "localhost:5555")
-          REPO_PREFIX="devops-demo-${{ env.NAMESPACE }}"
-
-          # Docker registry doesn't require authentication for localhost
-          # If registry requires auth, uncomment and configure:
-          # echo "YOUR_PASSWORD" | docker login ${REGISTRY_URL} --username YOUR_USERNAME --password-stdin
-
-          case "${{ env.SERVICE }}" in
-            resume-agent)
-              cd ../../python/resume-agent
-              docker build -t resume-agent:${{ env.VERSION }} .
-              docker tag resume-agent:${{ env.VERSION }} ${REGISTRY_URL}/${REPO_PREFIX}/resume-agent:${{ env.VERSION }}
-              docker push ${REGISTRY_URL}/${REPO_PREFIX}/resume-agent:${{ env.VERSION }}
-              ;;
-            server)
-              cd ../../typescript
-              docker build -t server:${{ env.VERSION }} -f apps/server/Dockerfile .
-              docker tag server:${{ env.VERSION }} ${REGISTRY_URL}/${REPO_PREFIX}/server:${{ env.VERSION }}
-              docker push ${REGISTRY_URL}/${REPO_PREFIX}/server:${{ env.VERSION }}
-              ;;
-            web)
-              cd ../../typescript
-              docker build -t web:${{ env.VERSION }} -f apps/web/Dockerfile \
-                --build-arg VITE_SERVER_URL=https://devops-demo.local/api .
-              docker tag web:${{ env.VERSION }} ${REGISTRY_URL}/${REPO_PREFIX}/web:${{ env.VERSION }}
-              docker push ${REGISTRY_URL}/${REPO_PREFIX}/web:${{ env.VERSION }}
-              ;;
-          esac
-
-          echo "✅ Pushed ${{ env.SERVICE }}:${{ env.VERSION }} to Docker registry"
-
       - name: Terraform Init
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
           terraform init
 
-      - name: Build and push migration image (server only)
-        if: env.SERVICE == 'server'
-        run: |
-          ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
-          cd "$ENV_DIR"
-          REGISTRY_URL=$(terraform output -raw registry_url || echo "localhost:5555")
-          REPO_PREFIX="devops-demo-${{ env.NAMESPACE }}"
-
-          # Build migration image
-          docker build -t server-migration:${{ env.VERSION }} -f ../../typescript/apps/server/Dockerfile.migration ../../typescript
-
-          docker tag server-migration:${{ env.VERSION }} ${REGISTRY_URL}/${REPO_PREFIX}/server-migration:${{ env.VERSION }}
-          docker push ${REGISTRY_URL}/${REPO_PREFIX}/server-migration:${{ env.VERSION }}
-          echo "✅ Pushed server-migration:${{ env.VERSION }} to Docker registry"
-
-          # Deploy migration job
-          terraform apply -var-file=terraform.tfvars \
-            -var="server_version=${{ env.VERSION }}" \
-            -target=module.server_migration \
-            -auto-approve
-
-      - name: Wait for migration job to complete
-        if: env.SERVICE == 'server'
-        run: |
-          JOB_NAME="server-migration-$(echo ${{ env.VERSION }} | tr '.' '-')"
-          NAMESPACE="${{ env.NAMESPACE }}"
-
-          echo "Waiting for migration job $JOB_NAME to complete..."
-
-          # Wait for job to be created
-          timeout=60
-          elapsed=0
-          while ! kubectl get job "$JOB_NAME" -n "$NAMESPACE" &>/dev/null; do
-            if [ $elapsed -ge $timeout ]; then
-              echo "Timeout waiting for job to be created"
-              exit 1
-            fi
-            sleep 2
-            elapsed=$((elapsed + 2))
-          done
-
-          # Wait for job to complete (success or failure)
-          if kubectl wait --for=condition=complete --timeout=300s job/"$JOB_NAME" -n "$NAMESPACE"; then
-            echo "✅ Migration job completed successfully"
-          else
-            echo "❌ Migration job failed or timed out"
-            kubectl logs job/"$JOB_NAME" -n "$NAMESPACE" || true
-            kubectl describe job/"$JOB_NAME" -n "$NAMESPACE" || true
-            exit 1
-          fi
-
-      - name: Deploy resume-agent via Terraform
+      - name: Deploy resume-agent
         if: env.SERVICE == 'resume-agent'
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
@@ -185,17 +85,47 @@ jobs:
             -target=module.resume_agent \
             -auto-approve
 
-      - name: Deploy server via Terraform
+      - name: Deploy server (with migration)
         if: env.SERVICE == 'server'
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
           cd "$ENV_DIR"
+
+          # Deploy migration job first
+          terraform apply -var-file=terraform.tfvars \
+            -var="server_version=${{ env.VERSION }}" \
+            -target=module.server_migration \
+            -auto-approve
+
+          # Wait for migration to complete
+          JOB_NAME="server-migration-$(echo ${{ env.VERSION }} | tr '.' '-')"
+          echo "Waiting for migration job $JOB_NAME to complete..."
+          timeout=60
+          elapsed=0
+          while ! kubectl get job "$JOB_NAME" -n "${{ env.NAMESPACE }}" &>/dev/null; do
+            if [ $elapsed -ge $timeout ]; then
+              echo "Timeout waiting for job to be created"
+              exit 1
+            fi
+            sleep 2
+            elapsed=$((elapsed + 2))
+          done
+
+          if kubectl wait --for=condition=complete --timeout=300s job/"$JOB_NAME" -n "${{ env.NAMESPACE }}"; then
+            echo "✅ Migration job completed successfully"
+          else
+            echo "❌ Migration job failed or timed out"
+            kubectl logs job/"$JOB_NAME" -n "${{ env.NAMESPACE }}" || true
+            exit 1
+          fi
+
+          # Deploy server
           terraform apply -var-file=terraform.tfvars \
             -var="server_version=${{ env.VERSION }}" \
             -target=module.server \
             -auto-approve
 
-      - name: Deploy web via Terraform
+      - name: Deploy web
         if: env.SERVICE == 'web'
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"

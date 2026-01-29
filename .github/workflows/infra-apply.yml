@@ -50,7 +50,6 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           ENV_DIR="infra/envs/${{ env.NAMESPACE }}"
-          # Update openai_api_key if secret is provided
           if [ -n "$OPENAI_API_KEY" ]; then
             if grep -q "^openai_api_key" "$ENV_DIR/terraform.tfvars"; then
               sed -i.bak "s|^openai_api_key.*|openai_api_key = \"$OPENAI_API_KEY\"|" "$ENV_DIR/terraform.tfvars"

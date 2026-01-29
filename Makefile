@@ -1,4 +1,4 @@
-.PHONY: all init infra-init infra-plan infra-apply infra-destroy build-all load-all deploy-all clean status restart ensure-cluster setup-kubeconfig help
+.PHONY: all init build apply clean infra-init infra-plan infra-apply infra-destroy build-all load-all deploy-all status restart ensure-cluster setup-kubeconfig help
 
 CLUSTER_NAME ?= devops-demo
 NAMESPACE ?= production
@@ -131,8 +131,8 @@ init:
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Edit $(TF_VARS) and configure your secrets (if not already done)"
-	@echo "  2. Run 'make infra-apply' to deploy infrastructure"
-	@echo "  3. Run 'make all' for full workflow (build + deploy)"
+	@echo "  2. Run 'make build' to build all services"
+	@echo "  3. Run 'make apply' to deploy infrastructure and services"
 
 # Helper to ensure Kind cluster exists (via Terraform)
 ensure-cluster:
@@ -161,6 +161,14 @@ setup-kubeconfig: ensure-cluster
 			echo "⚠️  Warning: Could not export kubeconfig. Cluster may not be ready yet."; \
 		fi; \
 	fi
+
+# === MAIN TARGETS ===
+# Simple main targets that call subcommands
+build: build-all
+	@echo "✅ Build complete"
+
+apply: infra-apply
+	@echo "✅ Apply complete"
 
 # === INFRASTRUCTURE ===
 infra-init: init
@@ -335,18 +343,45 @@ check-db: setup-kubeconfig
 
 # === CLEANUP ===
 clean:
-	@echo "Cleaning up infrastructure..."
+	@echo "=== Cleaning up infrastructure ==="
+	@# Destroy Terraform infrastructure (without init)
 	@if [ -f $(TF_VARS) ]; then \
 		echo "Destroying Terraform resources..."; \
+		cd $(TF_ENV_DIR) && terraform init >/dev/null 2>&1 || true; \
 		cd $(TF_ENV_DIR) && terraform destroy -var-file=terraform.tfvars -auto-approve -refresh=false || true; \
+	else \
+		echo "No terraform.tfvars found, skipping Terraform destroy"; \
 	fi
+	@# Delete Kind cluster
+	@echo "Cleaning up cluster..."
 	@if kind get clusters 2>/dev/null | grep -q "^$(CLUSTER_NAME)$$"; then \
 		echo "Deleting Kind cluster..."; \
 		kind delete cluster --name $(CLUSTER_NAME) || true; \
 	else \
 		echo "Cluster not found."; \
 	fi
-	@echo "Cleanup complete!"
+	@# Stop and remove Docker registry
+	@echo "Cleaning up Docker registry..."
+	@if docker ps -a --format '{{.Names}}' | grep -q "^docker-registry$$"; then \
+		echo "Stopping Docker registry container..."; \
+		docker stop docker-registry >/dev/null 2>&1 || true; \
+		echo "Removing Docker registry container..."; \
+		docker rm docker-registry >/dev/null 2>&1 || true; \
+	fi
+	@if command -v docker-compose >/dev/null 2>&1; then \
+		docker-compose -f docker-compose.registry.yml down -v >/dev/null 2>&1 || true; \
+	elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then \
+		docker compose -f docker-compose.registry.yml down -v >/dev/null 2>&1 || true; \
+	fi
+	@# Remove registry data directory
+	@if [ -d "$(CURDIR)/registry-data" ]; then \
+		echo "Removing registry data directory..."; \
+		rm -rf "$(CURDIR)/registry-data"; \
+		echo "✅ Registry data removed"; \
+	else \
+		echo "Registry data directory not found."; \
+	fi
+	@echo "✅ Cleanup complete!"
 
 # === UTILITIES ===
 status: setup-kubeconfig
@@ -373,23 +408,20 @@ restart: setup-kubeconfig
 help:
 	@echo "Usage: make [target] [NAMESPACE=staging]"
 	@echo ""
-	@echo "Initialization:"
-	@echo "  init            Initialize development environment (tools, /etc/hosts, config)"
+	@echo "Main Commands:"
+	@echo "  init            Initialize development environment (tools, cluster, config)"
+	@echo "  build           Build all service images"
+	@echo "  apply           Apply infrastructure and deploy services"
+	@echo "  clean           Destroy infrastructure and cluster"
 	@echo ""
-	@echo "Infrastructure:"
+	@echo "Subcommands:"
 	@echo "  infra-init      Initialize Terraform (runs init automatically)"
 	@echo "  infra-plan      Plan infrastructure changes"
 	@echo "  infra-apply     Apply infrastructure"
 	@echo "  infra-destroy   Destroy infrastructure"
-	@echo ""
-	@echo "Build & Deploy:"
-	@echo "  build-all       Build all service images"
+	@echo "  build-all       Build all service images (subcommand)"
 	@echo "  load-all        Load images into Kind cluster"
 	@echo "  deploy-all      Deploy all services"
-	@echo ""
-	@echo "Full Workflow:"
-	@echo "  all             Deploy everything (infra + build + deploy)"
-	@echo "  clean           Destroy cluster and infrastructure"
 	@echo ""
 	@echo "Utilities:"
 	@echo "  ensure-cluster  Ensure Kind cluster exists (creates via Terraform if needed)"
