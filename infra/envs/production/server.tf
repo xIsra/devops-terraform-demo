@@ -10,7 +10,6 @@ module "server" {
 
   depends_on = [
     module.namespace,
-    null_resource.wait_for_ingress,
     module.server_migration,
     module.postgresql
   ]

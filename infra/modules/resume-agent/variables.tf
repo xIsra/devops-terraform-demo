@@ -11,7 +11,7 @@ variable "image_version" {
 variable "replicas" {
   description = "Number of resume-agent replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "openai_api_key" {

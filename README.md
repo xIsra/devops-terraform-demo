@@ -82,7 +82,7 @@ This will:
 | Server API   | https://devops-demo.local/api        | tRPC API endpoints      |
 | Resume Agent | https://devops-demo.local/resume-api | FastAPI resume analysis |
 
-**Note**: Caddy automatically provides HTTPS with self-signed certificates for `.local` domains. Your browser may show a security warning - click "Advanced" and "Proceed" to accept the certificate.
+**Note**: Nginx Ingress provides routing for `.local` domains and can use self-signed certificates. Your browser may show a security warning - click "Advanced" and "Proceed" to accept the certificate.
 
 ### 5. Access Observability
 
@@ -178,13 +178,13 @@ make load-all
 
 ```bash
 # Check ingress controller
-kubectl get pods -n caddy-system
+kubectl get pods -n ingress-nginx
 
 # Check ingress resources
 kubectl get ingress -n production
 
 # View ingress controller logs
-kubectl logs -n caddy-system -l app.kubernetes.io/name=caddy-ingress-controller
+kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller
 
 # Verify domain is in /etc/hosts
 grep devops-demo.local /etc/hosts
@@ -208,7 +208,7 @@ kubectl get svc -n database
 
 ### SSL Certificate Warnings
 
-When accessing `https://devops-demo.local`, browsers show a security warning because Caddy uses self-signed certificates for `.local` domains. This is expected for local development:
+When accessing `https://devops-demo.local`, browsers show a security warning because the Nginx Ingress controller uses self-signed certificates for `.local` domains. This is expected for local development:
 
 1. Click "Advanced" or "Show Details"
 2. Click "Proceed to devops-demo.local" or "Accept the Risk and Continue"

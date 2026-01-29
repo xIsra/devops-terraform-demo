@@ -8,8 +8,7 @@ module "web" {
   ingress_host  = var.ingress_host
 
   depends_on = [
-    module.namespace,
-    null_resource.wait_for_ingress,
-    module.server # Ensure server ingress (with /api path) is created before web ingress (with / path)
+    module.namespace
+    # Note: Server dependency removed for faster startup. Ingress will route once ready.
   ]
 }

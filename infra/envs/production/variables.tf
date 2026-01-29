@@ -53,19 +53,19 @@ variable "web_version" {
 variable "resume_agent_replicas" {
   description = "Number of resume-agent replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "server_replicas" {
   description = "Number of server replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "web_replicas" {
   description = "Number of web replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 # -----------------------------------------------------------------------------

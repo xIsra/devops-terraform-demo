@@ -11,7 +11,7 @@ variable "image_version" {
 variable "replicas" {
   description = "Number of web replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "api_base_url" {

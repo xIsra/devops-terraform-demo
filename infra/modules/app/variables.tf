@@ -21,7 +21,7 @@ variable "port" {
 variable "replicas" {
   description = "Number of replicas"
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "ingress_path" {

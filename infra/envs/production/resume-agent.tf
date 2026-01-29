@@ -9,7 +9,6 @@ module "resume_agent" {
   ingress_host   = var.ingress_host
 
   depends_on = [
-    module.namespace,
-    null_resource.wait_for_ingress
+    module.namespace
   ]
 }
