@@ -1,5 +1,7 @@
 # K8s Cluster Infrastructure
 
+Demo: [Demo video](https://youtu.be/-FyedXjGiUw)
+
 Quick start guide for deploying microservices to Kubernetes. See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed architecture and design decisions.
 
 ## Prerequisites
